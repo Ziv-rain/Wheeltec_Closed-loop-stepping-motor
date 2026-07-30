@@ -1,0 +1,27 @@
+# CCS build artifacts
+Debug/*.o
+Debug/*.d
+Debug/*.d_raw
+Debug/*.map
+Debug/*.xml
+Debug/*.out
+Debug/makefile
+Debug/sources.mk
+Debug/objects.mk
+Debug/subdir_*.mk
+Debug/ccsObjs.opt
+Debug/Control/
+Debug/Hardware/
+Debug/.clangd/
+.settings/
+*.out
+*.map
+*.bin
+
+# IDE
+.launches/
+.metadata/
+
+# Temp
+*.swp
+*.bak
