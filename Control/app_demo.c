@@ -158,7 +158,7 @@ void Demo_Init(void)
     s_demo1_state = 0U;
     s_demo2_state = 0U;
     s_demo3_state = 0U;
-#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
+#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4) || (DEMO_SELECT == 6)
     CL_Init();
 #endif
     uart_puts("\r\n****************************************************\r\n");
@@ -176,6 +176,10 @@ void Demo_Init(void)
 #elif (DEMO_SELECT == 3)
     uart_puts("- Closed-loop auto: 0 <-> "); uart_putf(DEMO3_TARGET_DEG, 1);
     uart_puts(" deg\r\n");
+#elif (DEMO_SELECT == 6)
+    uart_puts("- Data collection sweep: "); uart_putf(SWEEP_ANGLE_MIN, 0);
+    uart_puts(" ~ "); uart_putf(SWEEP_ANGLE_MAX, 0);
+    uart_puts(" deg, "); uart_putu(SWEEP_PERIOD_MS / 1000U); uart_puts("s/cycle\r\n");
 #else
     uart_puts("- Serial command mode\r\n");
     Demo4_PrintHelp();
@@ -187,7 +191,7 @@ void Demo_Tick5ms(void)
 {
     s_ms += CL_PERIOD_MS;
     Encoder_Tick(CL_PERIOD_MS);
-#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
+#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4) || (DEMO_SELECT == 6)
     CL_Process();
 #endif
 }
@@ -258,6 +262,27 @@ void Demo_Process(void)
         }
 #endif
         s_last_output = s_ms;
+    }
+#endif
+#if (DEMO_SELECT == 6)
+    /* 三角波扫描: 电机在 -20°~+20° 间缓慢摆动, 球随摆杆滚动 */
+    {
+        float progress, target;
+        uint32_t half = s_ms % SWEEP_PERIOD_MS;
+        if (half < SWEEP_PERIOD_MS / 2U) {
+            progress = (float)half / (float)(SWEEP_PERIOD_MS / 2U);
+            target = SWEEP_ANGLE_MIN + progress * (SWEEP_ANGLE_MAX - SWEEP_ANGLE_MIN);
+        } else {
+            progress = (float)(half - SWEEP_PERIOD_MS / 2U) / (float)(SWEEP_PERIOD_MS / 2U);
+            target = SWEEP_ANGLE_MAX - progress * (SWEEP_ANGLE_MAX - SWEEP_ANGLE_MIN);
+        }
+        (void)CL_SetTargetAngle(MOTOR_AXIS_X, target);
+        if ((s_ms - s_last_output) >= 500U) {
+            s_last_output = s_ms;
+            uart_puts("Tgt="); uart_putf(target, 1);
+            uart_puts(" Act="); uart_putf(CL_GetCurrentAngle(MOTOR_AXIS_X), 1);
+            uart_puts("\r\n");
+        }
     }
 #endif
 }
