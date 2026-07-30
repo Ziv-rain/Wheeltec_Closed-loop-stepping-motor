@@ -201,13 +201,6 @@ MotorStatus_t CL_SetTargetAngle(MotorAxis_t axis, float target_deg)
     s_cl.active = 1U;
     s_cl.reached = 0U;
     s_cl.settle_cycles = 0U;
-    /* Save direction to flash */
-    {
-        NVM_Settings_t nvm;
-        nvm.encoder_zero  = Encoder_GetZeroOffset(ENCODER_AXIS_X);
-        nvm.pos_dir_level = s_cl.positive_dir_level;
-        NVM_Save(&nvm);
-    }
     return MOTOR_OK;
 }
 

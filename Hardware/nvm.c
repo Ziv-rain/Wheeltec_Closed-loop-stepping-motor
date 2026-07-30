@@ -5,6 +5,7 @@
  * Uses last sector (sector 127) at address 0x0001FC00
  */
 #include "nvm.h"
+#include <stddef.h>
 #include "ti_msp_dl_config.h"
 
 /* Last 1KB sector */
