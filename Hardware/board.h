@@ -10,8 +10,8 @@
 #include "ti_msp_dl_config.h"
 #include "motor.h"
 
-/* ����ֵ / Absolute value */
-#define ABS(a)      (a>0 ? a:(-a))
+/* 绝对值 / Absolute value (参数加括号, 避免表达式实参展开错误) */
+#define ABS(a)      (((a)>0) ? (a) : (-(a)))
 /* �з������ͼ�д / Signed type aliases */
 typedef int32_t  s32;
 typedef int16_t s16;

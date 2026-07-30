@@ -1,28 +1,20 @@
 /**
-  ******************************************************************************
-  * @file    closed_loop.c
-  * @brief   ����ֶ�����λ�ñջ��ͷ������ϼ��
-  ******************************************************************************
-  * ����������TIMG8Ӳ��QEI��������λ������ͨ��TIMA1�����������𲽱ƽ�Ŀ�ꡣ
-  * ���д�����Ϊ��������ʽ����ǰ����ν�����Ż���㲢������һ�Ρ�
-  ******************************************************************************
-  */
+ * closed_loop.c - Closed-loop stepper position control
+ *
+ * The balance-control mode establishes the software zero after its guarded
+ * PWM absolute-angle homing sequence.
+ */
 #include "closed_loop.h"
 #include "encoder.h"
 #include "demo_config.h"
-#include "nvm.h"
 
-/* ����3�����ڴ����ݲ��ڲ��㵽λ����ֹֻ��˲�侭��Ŀ��λ�á� */
 #define CL_SETTLE_CYCLES    3U
-/* ÿ�����8��΢��(��16ϸ�ֵȱ�������)��������α��ڼ�ʱ�ز�λ�á� */
 #define CL_MAX_BURST_STEPS  ((8U * D36A_MICROSTEP) / 16U)
-/* ������ֵ���ۼ�64���岻�����޷������ۼ�64���������з������ */
 #define CL_CHECK_STEP_LIMIT 64U
 #define CL_MOVE_CONFIRM     2
 #define CL_REVERSE_LIMIT    64U
 #define CL_REVERSE_COUNTS   3
 
-/* ����ջ�״̬�͡�����һ�������˶Է����������ͳ������ */
 typedef struct {
     volatile int32_t target_count;
     volatile uint8_t active;
@@ -40,7 +32,6 @@ typedef struct {
 static CL_State_t s_cl;
 static uint8_t s_initialized;
 
-/* �Ƕ�ת�����������������������������롣 */
 static int32_t CL_AngleToCount(float angle)
 {
     float scaled = angle * ENCODER_COUNTS_PER_REV / 360.0f;
@@ -48,13 +39,11 @@ static int32_t CL_AngleToCount(float angle)
                               (int32_t)(scaled - 0.5f);
 }
 
-/* ����������ת�Ƕȣ�4000������Ӧ360�ȡ� */
 static float CL_CountToAngle(int32_t count)
 {
     return (float)count * 360.0f / ENCODER_COUNTS_PER_REV;
 }
 
-/* �ֶ����٣����Խ��Ƶ��Խ�ߣ�����Ŀ����٣����ٳ������񵴡� */
 static uint32_t CL_SelectFrequency(uint32_t error)
 {
     if (error > 800U) return 3000U;
@@ -64,7 +53,6 @@ static uint32_t CL_SelectFrequency(uint32_t error)
     return 400U;
 }
 
-/* ���������/�����������������㱾�β���������ȡ�����������γ��� */
 static uint32_t CL_ErrorToSteps(uint32_t error)
 {
     uint64_t numerator = (uint64_t)error * MOTOR_STEPS_PER_REV;
@@ -75,7 +63,6 @@ static uint32_t CL_ErrorToSteps(uint32_t error)
     return steps;
 }
 
-/* �������״̬ʱ����ֹͣ������������δ�˶Եķ���ͳ�ơ� */
 static void CL_SetFault(CL_Fault_t fault)
 {
     s_cl.fault = fault;
@@ -87,12 +74,6 @@ static void CL_SetFault(CL_Fault_t fault)
     Motor_Stop(MOTOR_AXIS_X);
 }
 
-/**
-  * �˶���һ����ε�A/B������
-  * 1. �����������ƶ��ﵽ��ֵ����������������ۼƣ�
-  * 2. ���Է����ۼƷ������壬���ޱ�������ϣ�
-  * 3. �����������ۼ��ѷ����壬���ޱ��ޱ�����������
-  */
 static void CL_CheckFeedback(int32_t current)
 {
     int32_t movement;
@@ -116,7 +97,6 @@ static void CL_CheckFeedback(int32_t current)
     if (s_cl.check_steps >= CL_CHECK_STEP_LIMIT) CL_SetFault(CL_FAULT_NO_ENCODER);
 }
 
-/* �ϵ�λ����Ϊ��㣬�ջ���ʼΪ�������ѵ�λ״̬�� */
 void CL_Init(void)
 {
     s_cl.target_count = 0;
@@ -131,36 +111,28 @@ void CL_Init(void)
     s_cl.check_start_pos = 0;
     s_cl.positive_dir_level = AXIS_X_POSITIVE_DIR_LEVEL;
     Encoder_SetZero(ENCODER_AXIS_X);
-
-    /* Load saved settings from flash (restore zero & direction) */
-    {
-        NVM_Settings_t nvm;
-        if (NVM_Load(&nvm) != 0U) {
-            Encoder_RestoreZero(ENCODER_AXIS_X, nvm.encoder_zero);
-            s_cl.positive_dir_level = nvm.pos_dir_level;
-        }
-    }
-
     s_initialized = 1U;
 }
 
-/**
-  * �ջ����Ĵ������ȴ���ǰ����ν������˶Է���������λ����
-  * ��ѡ���򡢲�����Ƶ�ʷ�����һС�����塣
-  */
 void CL_Process(void)
 {
-    int32_t current, error;
+    int32_t current;
+    int64_t error;
+    uint64_t error_magnitude;
     uint32_t error_abs, steps, frequency;
     uint8_t direction;
     int8_t sign;
+
     if (s_initialized == 0U) return;
+
     current = Encoder_GetCount(ENCODER_AXIS_X);
     if (Motor_IsBusy(MOTOR_AXIS_X) != 0U) return;
     CL_CheckFeedback(current);
     if (s_cl.active == 0U || s_cl.fault != CL_FAULT_NONE) return;
-    error = s_cl.target_count - current;
-    error_abs = (error >= 0) ? (uint32_t)error : (uint32_t)(-error);
+    error = (int64_t)s_cl.target_count - (int64_t)current;
+    error_magnitude = (error >= 0) ? (uint64_t)error : (uint64_t)(-error);
+    error_abs = (error_magnitude > UINT32_MAX) ?
+                UINT32_MAX : (uint32_t)error_magnitude;
     if (error_abs <= CL_TOLERANCE_COUNTS) {
         if (s_cl.settle_cycles < CL_SETTLE_CYCLES) s_cl.settle_cycles++;
         if (s_cl.settle_cycles >= CL_SETTLE_CYCLES) s_cl.reached = 1U;
@@ -191,30 +163,45 @@ void CL_Process(void)
     s_cl.feedback_pending = 1U;
 }
 
-/* ��Ŀ�����������Ϊ��׼��ת��ΪQEIĿ������������ջ��� */
 MotorStatus_t CL_SetTargetAngle(MotorAxis_t axis, float target_deg)
 {
+    uint32_t primask;
+    int32_t new_target;
+    int64_t target_delta;
+
     if (axis != MOTOR_AXIS_X || s_initialized == 0U || target_deg != target_deg ||
-        target_deg > 100000.0f || target_deg < -100000.0f ||
-        s_cl.fault != CL_FAULT_NONE) return MOTOR_ERROR;
-    s_cl.target_count = CL_AngleToCount(target_deg);
-    s_cl.active = 1U;
-    s_cl.reached = 0U;
-    s_cl.settle_cycles = 0U;
-    /* Save direction to flash */
-    {
-        NVM_Settings_t nvm;
-        nvm.encoder_zero  = Encoder_GetZeroOffset(ENCODER_AXIS_X);
-        nvm.pos_dir_level = s_cl.positive_dir_level;
-        NVM_Save(&nvm);
+        target_deg > 100000.0f || target_deg < -100000.0f) {
+        return MOTOR_ERROR;
     }
+
+    new_target = CL_AngleToCount(target_deg);
+    primask = __get_PRIMASK();
+    __disable_irq();
+    if (s_cl.fault != CL_FAULT_NONE) {
+        if (primask == 0U) __enable_irq();
+        return MOTOR_ERROR;
+    }
+
+    target_delta = (int64_t)new_target - (int64_t)s_cl.target_count;
+    if (s_cl.active == 0U ||
+        target_delta > (int32_t)CL_TOLERANCE_COUNTS ||
+        target_delta < -(int32_t)CL_TOLERANCE_COUNTS) {
+        s_cl.reached = 0U;
+        s_cl.settle_cycles = 0U;
+    }
+    s_cl.target_count = new_target;
+    s_cl.active = 1U;
+    if (primask == 0U) __enable_irq();
     return MOTOR_OK;
 }
 
-/* ����ǰλ����Ϊ0��ȡ����ǰĿ�꣬ͬʱ������Ϻͷ���ͳ�ơ� */
 void CL_SetZero(MotorAxis_t axis)
 {
+    uint32_t primask;
+
     if (axis != MOTOR_AXIS_X || s_initialized == 0U) return;
+    primask = __get_PRIMASK();
+    __disable_irq();
     Motor_Stop(axis);
     Encoder_SetZero(ENCODER_AXIS_X);
     s_cl.target_count = 0;
@@ -224,36 +211,36 @@ void CL_SetZero(MotorAxis_t axis)
     s_cl.feedback_pending = 0U;
     s_cl.check_steps = 0U;
     s_cl.reverse_steps = 0U;
-
-    /* Save zero & direction to flash */
-    {
-        NVM_Settings_t nvm;
-        nvm.encoder_zero  = Encoder_GetZeroOffset(ENCODER_AXIS_X);
-        nvm.pos_dir_level = s_cl.positive_dir_level;
-        NVM_Save(&nvm);
-    }
+    if (primask == 0U) __enable_irq();
 }
 
 void CL_SetZeroAll(void) { CL_SetZero(MOTOR_AXIS_X); }
 
-/* ����ֹͣ��ǰĿ�ꣻֹͣ����ͬ�ڵ�λ�����reached��0�� */
 void CL_Stop(MotorAxis_t axis)
 {
+    uint32_t primask;
+
     if (axis != MOTOR_AXIS_X) return;
+    primask = __get_PRIMASK();
+    __disable_irq();
     Motor_Stop(axis);
     s_cl.active = 0U;
     s_cl.reached = 0U;
     s_cl.feedback_pending = 0U;
     s_cl.check_steps = 0U;
     s_cl.reverse_steps = 0U;
+    if (primask == 0U) __enable_irq();
 }
 
 void CL_StopAll(void) { CL_Stop(MOTOR_AXIS_X); }
 
-/* ����Ϻ��Ե�ǰλ��ΪĿ�꣬����ԭ�صȴ���һ����� */
 void CL_ClearFault(MotorAxis_t axis)
 {
+    uint32_t primask;
+
     if (axis != MOTOR_AXIS_X || s_initialized == 0U) return;
+    primask = __get_PRIMASK();
+    __disable_irq();
     Motor_Stop(axis);
     s_cl.target_count = Encoder_GetCount(ENCODER_AXIS_X);
     s_cl.active = 0U;
@@ -262,21 +249,23 @@ void CL_ClearFault(MotorAxis_t axis)
     s_cl.feedback_pending = 0U;
     s_cl.check_steps = 0U;
     s_cl.reverse_steps = 0U;
+    if (primask == 0U) __enable_irq();
 }
 
-/* ͣ��ʱ��ת�߼������������ֳ�����DIR�����������һ�¡� */
 MotorStatus_t CL_TogglePositiveDirLevel(MotorAxis_t axis)
 {
-    if (axis != MOTOR_AXIS_X || Motor_IsBusy(axis) != 0U) return MOTOR_ERROR;
+    uint32_t primask;
+
+    if (axis != MOTOR_AXIS_X) return MOTOR_ERROR;
+    primask = __get_PRIMASK();
+    __disable_irq();
+    if (Motor_IsBusy(axis) != 0U) {
+        if (primask == 0U) __enable_irq();
+        return MOTOR_ERROR;
+    }
     s_cl.positive_dir_level = (uint8_t)!s_cl.positive_dir_level;
     s_cl.reverse_steps = 0U;
-    /* Save direction to flash */
-    {
-        NVM_Settings_t nvm;
-        nvm.encoder_zero  = Encoder_GetZeroOffset(ENCODER_AXIS_X);
-        nvm.pos_dir_level = s_cl.positive_dir_level;
-        NVM_Save(&nvm);
-    }
+    if (primask == 0U) __enable_irq();
     return MOTOR_OK;
 }
 
@@ -295,16 +284,27 @@ float CL_GetCurrentAngle(MotorAxis_t axis)
     return (axis == MOTOR_AXIS_X) ? Encoder_GetAngle(ENCODER_AXIS_X) : 0.0f;
 }
 
-/* ���ڲ�״̬���Ƶ����գ����⴮�ڲ�ֱ�������ջ�˽�б����� */
 void CL_GetSnapshot(MotorAxis_t axis, CL_Snapshot_t *snapshot)
 {
+    uint32_t primask;
+    int64_t error;
+
     if (axis != MOTOR_AXIS_X || snapshot == 0 || s_initialized == 0U) return;
+
+    primask = __get_PRIMASK();
+    __disable_irq();
     snapshot->current_count = Encoder_GetCount(ENCODER_AXIS_X);
     snapshot->target_count = s_cl.target_count;
-    snapshot->error_count = snapshot->target_count - snapshot->current_count;
-    snapshot->current_angle_deg = CL_CountToAngle(snapshot->current_count);
-    snapshot->target_angle_deg = CL_CountToAngle(snapshot->target_count);
     snapshot->active = s_cl.active;
     snapshot->reached = s_cl.reached;
     snapshot->fault = s_cl.fault;
+    if (primask == 0U) __enable_irq();
+
+    error = (int64_t)snapshot->target_count -
+            (int64_t)snapshot->current_count;
+    if (error > INT32_MAX) error = INT32_MAX;
+    if (error < INT32_MIN) error = INT32_MIN;
+    snapshot->error_count = (int32_t)error;
+    snapshot->current_angle_deg = CL_CountToAngle(snapshot->current_count);
+    snapshot->target_angle_deg = CL_CountToAngle(snapshot->target_count);
 }

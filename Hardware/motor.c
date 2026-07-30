@@ -1,28 +1,28 @@
 /**
   ******************************************************************************
   * @file    motor.c
-  * @brief   »ùÓÚTIMA1Ó²¼þPWMµÄD36A STEPÂö³å·¢ÉúÆ÷
+  * @brief   ï¿½ï¿½ï¿½ï¿½TIMA1Ó²ï¿½ï¿½PWMï¿½ï¿½D36A STEPï¿½ï¿½ï¿½å·¢ï¿½ï¿½ï¿½ï¿½
   ******************************************************************************
-  * Ó²¼þPWM±£Ö¤Âö³åÖÜÆÚÎÈ¶¨£»¶¨²½Ä£Ê½ÔÚÃ¿¸öPWMÖÜÆÚÖÐ¶ÏÀïµÝ¼õÊ£Óà²½Êý£¬
-  * ¹éÁãºóÁ¢¼´¹Ø±Õ¶¨Ê±Æ÷²¢Ç¿ÖÆSTEPÎªµÍ£¬±ÜÃâÍ£Ö¹Î»ÖÃ¶à³öÃ«´ÌÂö³å¡£
+  * Ó²ï¿½ï¿½PWMï¿½ï¿½Ö¤ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½Ã¿ï¿½ï¿½PWMï¿½ï¿½ï¿½ï¿½ï¿½Ð¶ï¿½ï¿½ï¿½Ý¼ï¿½Ê£ï¿½à²½ï¿½ï¿½ï¿½ï¿½
+  * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø±Õ¶ï¿½Ê±ï¿½ï¿½ï¿½ï¿½Ç¿ï¿½ï¿½STEPÎªï¿½Í£ï¿½ï¿½ï¿½ï¿½ï¿½Í£Ö¹Î»ï¿½Ã¶ï¿½ï¿½Ã«ï¿½ï¿½ï¿½ï¿½ï¿½å¡£
   ******************************************************************************
   */
 #include "motor.h"
 
-/* ÖÐ¶ÏºÍÖ÷Ñ­»·¹²ÏíµÄµ¥ÖáÔËÐÐ×´Ì¬£¬±ØÐëÊ¹ÓÃvolatile¡£ */
+/* ï¿½Ð¶Ïºï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Äµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×´Ì¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¹ï¿½ï¿½volatileï¿½ï¿½ */
 static volatile uint32_t s_remaining_steps;
 static volatile uint8_t s_busy;
 static volatile uint8_t s_continuous;
 static volatile uint8_t s_direction;
 
-/* ½ûÖ¹PWMÊä³öÊ±Ç¿ÖÆSTEP±£³ÖµÍµçÆ½£¬±ÜÃâÇý¶¯Æ÷ÎóÊ¶±ð±ßÑØ¡£ */
+/* ï¿½ï¿½Ö¹PWMï¿½ï¿½ï¿½Ê±Ç¿ï¿½ï¿½STEPï¿½ï¿½ï¿½ÖµÍµï¿½Æ½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¶ï¿½ï¿½ï¿½ï¿½Ø¡ï¿½ */
 static void Motor_ForceLow(void)
 {
     DL_TimerA_setCCPOutputDisabled(MOTOR_STEP_TIMER,
         DL_TIMER_CCP_DIS_OUT_LOW, DL_TIMER_CCP_DIS_OUT_LOW);
 }
 
-/* »Ö¸´CCPÍ¨µÀÓÉ¶¨Ê±Æ÷Êä³ö¿ØÖÆ¡£ */
+/* ï¿½Ö¸ï¿½CCPÍ¨ï¿½ï¿½ï¿½É¶ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ¡ï¿½ */
 static void Motor_UsePWM(void)
 {
     DL_TimerA_setCCPOutputDisabled(MOTOR_STEP_TIMER,
@@ -30,8 +30,8 @@ static void Motor_UsePWM(void)
 }
 
 /*
- * Í£Ö¹µ×²ã¶¯×÷¡£µ÷ÓÃÕßÐèÒª±£Ö¤Ô­×ÓÐÔ£»ÖÐ¶ÏÄÚ²¿¿ÉÖ±½Óµ÷ÓÃ£¬
- * Ö÷Ñ­»·µ÷ÓÃÊ±ÓÉÍâ²ãÁÙ½çÇø·ÀÖ¹ºÍ¼Æ²½ÖÐ¶ÏÍ¬Ê±ÐÞ¸Ä×´Ì¬¡£
+ * Í£Ö¹ï¿½×²ã¶¯ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½Ö¤Ô­ï¿½ï¿½ï¿½Ô£ï¿½ï¿½Ð¶ï¿½ï¿½Ú²ï¿½ï¿½ï¿½Ö±ï¿½Óµï¿½ï¿½Ã£ï¿½
+ * ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ù½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¹ï¿½Í¼Æ²ï¿½ï¿½Ð¶ï¿½Í¬Ê±ï¿½Þ¸ï¿½×´Ì¬ï¿½ï¿½
  */
 static void Motor_StopUnsafe(void)
 {
@@ -44,7 +44,7 @@ static void Motor_StopUnsafe(void)
     s_continuous = 0U;
 }
 
-/* ½«STEPÆµÂÊ»»ËãÎª1MHz¶¨Ê±Æ÷ÖÜÆÚ£¬²¢ÏÞÖÆÔÚ16Î»¶¨Ê±Æ÷ÓÐÐ§·¶Î§¡£ */
+/* ï¿½ï¿½STEPÆµï¿½Ê»ï¿½ï¿½ï¿½Îª1MHzï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½Ú£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½16Î»ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½Ð§ï¿½ï¿½Î§ï¿½ï¿½ */
 static uint16_t Motor_FrequencyToPeriod(uint32_t frequency_hz)
 {
     uint32_t period = (MOTOR_STEP_TIMER_CLK_HZ + frequency_hz / 2U) / frequency_hz;
@@ -53,7 +53,7 @@ static uint16_t Motor_FrequencyToPeriod(uint32_t frequency_hz)
     return (uint16_t)period;
 }
 
-/* ÅäÖÃ50%Õ¼¿Õ±ÈSTEP²¨ÐÎ£»¼ÆÊýÆ÷´ÓLOADÖØÐÂ¿ªÊ¼£¬±£Ö¤Ê×¸öÖÜÆÚÍêÕû¡£ */
+/* ï¿½ï¿½ï¿½ï¿½50%Õ¼ï¿½Õ±ï¿½STEPï¿½ï¿½ï¿½Î£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½LOADï¿½ï¿½ï¿½Â¿ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½Ö¤ï¿½×¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
 static void Motor_ConfigurePWM(uint32_t frequency_hz)
 {
     uint32_t period = Motor_FrequencyToPeriod(frequency_hz);
@@ -66,7 +66,7 @@ static void Motor_ConfigurePWM(uint32_t frequency_hz)
                                      MOTOR_STEP_CC_INDEX);
 }
 
-/* ÉÏµçÄ¬ÈÏ£ºENÖÃ¸ßÊ¹ÄÜÇý¶¯Æ÷£¬DIRÖÃµÍ£¬STEPÍ£Ö¹ÇÒ±£³ÖµÍµçÆ½¡£ */
+/* ï¿½Ïµï¿½Ä¬ï¿½Ï£ï¿½ENï¿½Ã¸ï¿½Ê¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½DIRï¿½ÃµÍ£ï¿½STEPÍ£Ö¹ï¿½Ò±ï¿½ï¿½ÖµÍµï¿½Æ½ï¿½ï¿½ */
 void Motor_Init(void)
 {
     DL_GPIO_initDigitalOutputFeatures(IOMUX_PINCM34,
@@ -82,7 +82,7 @@ void Motor_Init(void)
     NVIC_EnableIRQ(PWM_0_INST_INT_IRQN);
 }
 
-/* Ö»ÔÊÐíÍ£»úÊ±¸Ä±äDIR£¬±ÜÃâÔË¶¯¹ý³ÌÖÐÍ»È»·´ÏòÔì³É¶ª²½¡£ */
+/* Ö»ï¿½ï¿½ï¿½ï¿½Í£ï¿½ï¿½Ê±ï¿½Ä±ï¿½DIRï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í»È»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É¶ï¿½ï¿½ï¿½ï¿½ï¿½ */
 MotorStatus_t Motor_SetDirection(MotorAxis_t axis, uint8_t high_level)
 {
     if (axis != MOTOR_AXIS_X || high_level > 1U) return MOTOR_ERROR;
@@ -98,7 +98,7 @@ uint8_t Motor_GetDirection(MotorAxis_t axis)
     return (axis == MOTOR_AXIS_X) ? s_direction : 0U;
 }
 
-/* Æô¶¯ÓÐÏÞÂö³å¶Î£»¹ØÖÐ¶Ï½¨Á¢ÁÙ½çÇø£¬±£Ö¤busyºÍÊ£Óà²½ÊýÍ¬²½¸üÐÂ¡£ */
+/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î£ï¿½ï¿½ï¿½ï¿½Ð¶Ï½ï¿½ï¿½ï¿½ï¿½Ù½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¤busyï¿½ï¿½Ê£ï¿½à²½ï¿½ï¿½Í¬ï¿½ï¿½ï¿½ï¿½ï¿½Â¡ï¿½ */
 MotorStatus_t Motor_Start(MotorAxis_t axis, uint32_t steps,
                           uint32_t frequency_hz)
 {
@@ -124,13 +124,14 @@ MotorStatus_t Motor_Start(MotorAxis_t axis, uint32_t steps,
     return MOTOR_OK;
 }
 
-/* ÊµÑé2Á¬ÐøÐý×ª£º¹Ø±ÕZERO¼Æ²½ÖÐ¶Ï£¬ÈÃÓ²¼þPWM³ÖÐø×ÔÓÉÔËÐÐ¡£ */
+/* Êµï¿½ï¿½2ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½Ø±ï¿½ZEROï¿½Æ²ï¿½ï¿½Ð¶Ï£ï¿½ï¿½ï¿½Ó²ï¿½ï¿½PWMï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¡ï¿½ */
 void Motor_StartContinuous(uint32_t frequency_hz, uint8_t high_level)
 {
     uint32_t primask;
     if (frequency_hz < MOTOR_MIN_FREQ_HZ || frequency_hz > MOTOR_MAX_FREQ_HZ) return;
     Motor_Stop(MOTOR_AXIS_X);
-    (void)Motor_SetDirection(MOTOR_AXIS_X, high_level);
+    /* æ–¹å‘è®¾ç½®å¤±è´¥(å‚æ•°éžæ³•)åˆ™æ”¾å¼ƒå¯åŠ¨, ä¸å†å¿½ç•¥è¿”å›žå€¼ */
+    if (Motor_SetDirection(MOTOR_AXIS_X, high_level) != MOTOR_OK) return;
     primask = __get_PRIMASK();
     __disable_irq();
     Motor_ConfigurePWM(frequency_hz);
@@ -142,7 +143,7 @@ void Motor_StartContinuous(uint32_t frequency_hz, uint8_t high_level)
     if (primask == 0U) __enable_irq();
 }
 
-/* ¿É´ÓÖ÷Ñ­»·°²È«µ÷ÓÃµÄÍ£Ö¹½Ó¿Ú¡£ */
+/* ï¿½É´ï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½ï¿½Ãµï¿½Í£Ö¹ï¿½Ó¿Ú¡ï¿½ */
 void Motor_Stop(MotorAxis_t axis)
 {
     uint32_t primask;
@@ -161,8 +162,8 @@ uint32_t Motor_GetRemainingSteps(MotorAxis_t axis)
 }
 
 /**
-  * STEPÖÜÆÚ¼ÆÊýÖÐ¶Ï£ºÒ»¸öZEROÊÂ¼þ¶ÔÓ¦Íê³ÉÒ»¸öÍêÕûSTEPÖÜÆÚ¡£
-  * Á¬ÐøÄ£Ê½²»½øÈë±¾¼ÆÊýÂß¼­£»ÓÐÏÞ²½Êý¼õµ½0ºóÁ¢¼´Í£Ö¹Êä³ö¡£
+  * STEPï¿½ï¿½ï¿½Ú¼ï¿½ï¿½ï¿½ï¿½Ð¶Ï£ï¿½Ò»ï¿½ï¿½ZEROï¿½Â¼ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½STEPï¿½ï¿½ï¿½Ú¡ï¿½
+  * ï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½ï¿½ï¿½ï¿½ë±¾ï¿½ï¿½ï¿½ï¿½ï¿½ß¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Þ²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½0ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í£Ö¹ï¿½ï¿½ï¿½ï¿½ï¿½
   */
 void TIMA1_IRQHandler(void)
 {

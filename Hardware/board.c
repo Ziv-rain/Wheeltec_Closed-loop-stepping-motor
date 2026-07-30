@@ -9,12 +9,12 @@
 volatile unsigned long tick_ms;
 volatile uint32_t start_time;
 
-/* 天猛星板载 LED 初始化: PB22, 推挽输出, 初始熄灭 */
+/* 天猛星板载 LED 初始化: PB22, 推挽输出 */
 void Board_LED_Init(void)
 {
     DL_GPIO_initDigitalOutput(IOMUX_PINCM50);
     DL_GPIO_enableOutput(LED_PORT, LED_PIN);
-    DL_GPIO_clearPins(LED_PORT, LED_PIN);
+    LED_ON();  /* 亮起表示系统已就绪 */
 }
 
 void SysTick_Init(void)
@@ -35,9 +35,11 @@ void delay_ms(uint32_t ms)
 {
 	// ����������ʱ��Χ��ض� / Clamp to max possible delay
 	//if( ms > SysTickMAX_COUNT/(SysTickFre/1000) ) ms = SysTickMAX_COUNT/(SysTickFre/1000);
-	for(int i=0;i<1000;i++)
-	{
-		delay_us(ms);
+	/* 分段调用避免 delay_us 内部 clamp 截断, 消除原 1000 次循环的累计开销 */
+	while (ms > 0U) {
+		uint32_t chunk = (ms > 200U) ? 200U : ms;
+		delay_us(chunk * 1000U);
+		ms -= chunk;
 	}
 }
 
@@ -132,8 +134,13 @@ void uart_putu(uint32_t n)
 
 void uart_puti(int32_t n)
 {
-    if (n < 0) { uart_putc('-'); n = -n; }
-    uart_putu((uint32_t)n);
+    if (n < 0) {
+        uart_putc('-');
+        /* 用无符号取反避免对 INT32_MIN 求 -n 时的有符号溢出(UB) */
+        uart_putu((uint32_t)(-(uint32_t)n));
+    } else {
+        uart_putu((uint32_t)n);
+    }
 }
 
 void uart_putf(float f, int decimals)
@@ -142,6 +149,8 @@ void uart_putf(float f, int decimals)
     uint32_t fpart;
     int i;
     if (f < 0.0f) { uart_putc('-'); f = -f; }
+    /* 限幅避免超出 int32_t 范围的 float 强转(UB) */
+    if (f > 2147483520.0f) f = 2147483520.0f;
     ipart = (int32_t)f;
     uart_puti(ipart);
     if (decimals > 0) {

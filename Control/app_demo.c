@@ -12,16 +12,22 @@
 #include "demo_config.h"
 #include "encoder.h"
 #include "motor.h"
+#include "proto_rx.h"
+#include "ball_control.h"
+#include "task_ctrl.h"
 
 static volatile uint32_t s_ms;
+#if (DEMO_SELECT == 4)
 static char s_line[40];
 static uint8_t s_line_len;
+#endif
 static uint32_t s_last_action;
 static uint32_t s_last_output;
 static uint8_t s_demo1_state;
 static uint8_t s_demo3_state;
 static uint8_t s_demo2_state;
 
+#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
 static const char *Demo_FaultName(CL_Fault_t fault)
 {
     if (fault == CL_FAULT_NONE)        return "OK";
@@ -29,8 +35,10 @@ static const char *Demo_FaultName(CL_Fault_t fault)
     if (fault == CL_FAULT_DIRECTION)   return "DIR_REVERSED";
     return "DRIVER";
 }
+#endif
 
 /* ---- Experiment 4: Serial Commands ---- */
+#if (DEMO_SELECT == 4)
 static void Demo4_PrintHelp(void)
 {
     uart_puts("\r\n========== Exp4 Serial Commands ==========\r\n");
@@ -102,8 +110,10 @@ static void Demo4_HandleCommand(char *line)
         uart_puts("Unknown: "); uart_puts(line); uart_puts(" (send H)\r\n");
     }
 }
+#endif
 
 /* ---- Experiment 2: Encoder Read ---- */
+#if (DEMO_SELECT == 2)
 static void Demo2_SetMotion(uint8_t motion)
 {
     if (motion == 0U) {
@@ -119,6 +129,7 @@ static void Demo2_SetMotion(uint8_t motion)
         uart_puts(" freq="); uart_putu(DEMO2_FREQ_HZ); uart_puts(" Hz, send 0 to stop\r\n");
     }
 }
+#endif
 
 static void Demo_PollUart(void)
 {
@@ -144,7 +155,26 @@ static void Demo_PollUart(void)
             s_line_len = 0U;
         }
 #else
-        (void)ch;
+        /* 模式5(平衡球)下调试串口入口 */
+        TaskCtrl_FeedByte((uint8_t)ch);
+        if (ch == 'X' || ch == 'x') {
+            CL_StopAll();
+            TaskCtrl_ReportFault();
+            uart_puts("ERR: Emergency stop\r\n");
+        } else if (ch == 'S' || ch == 's') {
+            float pwm_angle = 0.0f; uint8_t pwm_ok;
+            CL_Snapshot_t snap; CL_GetSnapshot(MOTOR_AXIS_X, &snap);
+            pwm_ok = Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm_angle);
+            uart_puts("Tgt="); uart_putf(snap.target_angle_deg, 2);
+            uart_puts(" Act="); uart_putf(snap.current_angle_deg, 2);
+            uart_puts(" Err="); uart_putf(snap.target_angle_deg - snap.current_angle_deg, 2);
+            uart_puts("  PWM="); if(pwm_ok) uart_putf(pwm_angle, 2); else uart_puts("N/A");
+            uart_puts(" Z="); uart_puti(Encoder_GetZCount(ENCODER_AXIS_X));
+            uart_puts("\r\n");
+        } else if (ch == 'Z' || ch == 'z') {
+            CL_SetZero(MOTOR_AXIS_X);
+            uart_puts("Zero set\r\n");
+        }
 #endif
     }
 }
@@ -152,14 +182,19 @@ static void Demo_PollUart(void)
 /* ---- Init ---- */
 void Demo_Init(void)
 {
+    ProtoRx_Init();
+    TaskCtrl_Init();
     s_ms = 0U;
     s_last_action = 0U;
     s_last_output = 0U;
     s_demo1_state = 0U;
     s_demo2_state = 0U;
     s_demo3_state = 0U;
-#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
+#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4) || (DEMO_SELECT == 5)
     CL_Init();
+#endif
+#if (DEMO_SELECT == 5)
+    BallControl_Init();
 #endif
     uart_puts("\r\n****************************************************\r\n");
     uart_puts("*  MS42CG + D36A Closed-loop Stepper Demo          *\r\n");
@@ -176,9 +211,11 @@ void Demo_Init(void)
 #elif (DEMO_SELECT == 3)
     uart_puts("- Closed-loop auto: 0 <-> "); uart_putf(DEMO3_TARGET_DEG, 1);
     uart_puts(" deg\r\n");
-#else
+#elif (DEMO_SELECT == 4)
     uart_puts("- Serial command mode\r\n");
     Demo4_PrintHelp();
+#else
+    uart_puts("- Ball control mode (UART2 vision + PID)\r\n");
 #endif
 }
 
@@ -187,7 +224,12 @@ void Demo_Tick5ms(void)
 {
     s_ms += CL_PERIOD_MS;
     Encoder_Tick(CL_PERIOD_MS);
-#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
+#if (DEMO_SELECT == 5)
+    ProtoRx_Tick(CL_PERIOD_MS);
+    TaskCtrl_Tick5ms();
+    BallControl_Tick5ms();
+    CL_Process();
+#elif (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
     CL_Process();
 #endif
 }
@@ -196,6 +238,9 @@ void Demo_Tick5ms(void)
 void Demo_Process(void)
 {
     Demo_PollUart();
+#if (DEMO_SELECT == 5)
+    TaskCtrl_Process();
+#endif
 
 #if (DEMO_SELECT == 1)
     if (Motor_IsBusy(MOTOR_AXIS_X) == 0U && (s_ms - s_last_action) >= 1000U) {
