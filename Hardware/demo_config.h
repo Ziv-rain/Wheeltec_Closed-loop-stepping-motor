@@ -46,12 +46,19 @@
 #define SWEEP_ANGLE_MIN             -20.0f
 #define SWEEP_ANGLE_MAX             20.0f
 #define SWEEP_PERIOD_MS             6000U
+#define SWEEP_UPDATE_MS             20U
 
-#if (DEMO_SELECT < 1) || (DEMO_SELECT > 6)
-#error "DEMO_SELECT must be 1..6"
+#if (DEMO_SELECT < 1) || (DEMO_SELECT > 6) || (DEMO_SELECT == 5)
+#error "DEMO_SELECT must be 1, 2, 3, 4, or 6"
 #endif
 #if (MOTOR_COUNT < 1) || (MOTOR_COUNT > 2)
 #error "MOTOR_COUNT must be 1 or 2"
+#endif
+#if (SWEEP_PERIOD_MS < (2U * CL_PERIOD_MS)) || ((SWEEP_PERIOD_MS % 2U) != 0U)
+#error "SWEEP_PERIOD_MS must be even and at least two control periods"
+#endif
+#if (SWEEP_UPDATE_MS < CL_PERIOD_MS)
+#error "SWEEP_UPDATE_MS must not be shorter than CL_PERIOD_MS"
 #endif
 
 #endif

@@ -2,7 +2,8 @@
  * app_demo.c - Demo experiments and serial command handler
  * Uses uart_put*() for numeric output (printf %d/%u/%f broken in TI libc)
  *
- * DEMO_SELECT: 1=open-loop  2=encoder read  3=closed-loop auto  4=serial cmd
+ * DEMO_SELECT: 1=open-loop  2=encoder read  3=closed-loop auto
+ *              4=serial cmd  6=data collection sweep
  */
 #include <stdio.h>
 #include <string.h>
@@ -21,6 +22,7 @@ static uint32_t s_last_output;
 static uint8_t s_demo1_state;
 static uint8_t s_demo3_state;
 static uint8_t s_demo2_state;
+static float s_sweep_target;
 
 static const char *Demo_FaultName(CL_Fault_t fault)
 {
@@ -158,6 +160,7 @@ void Demo_Init(void)
     s_demo1_state = 0U;
     s_demo2_state = 0U;
     s_demo3_state = 0U;
+    s_sweep_target = SWEEP_ANGLE_MIN;
 #if (DEMO_SELECT == 3) || (DEMO_SELECT == 4) || (DEMO_SELECT == 6)
     CL_Init();
 #endif
@@ -267,20 +270,27 @@ void Demo_Process(void)
 #if (DEMO_SELECT == 6)
     /* 三角波扫描: 电机在 -20°~+20° 间缓慢摆动, 球随摆杆滚动 */
     {
-        float progress, target;
-        uint32_t half = s_ms % SWEEP_PERIOD_MS;
-        if (half < SWEEP_PERIOD_MS / 2U) {
-            progress = (float)half / (float)(SWEEP_PERIOD_MS / 2U);
-            target = SWEEP_ANGLE_MIN + progress * (SWEEP_ANGLE_MAX - SWEEP_ANGLE_MIN);
-        } else {
-            progress = (float)(half - SWEEP_PERIOD_MS / 2U) / (float)(SWEEP_PERIOD_MS / 2U);
-            target = SWEEP_ANGLE_MAX - progress * (SWEEP_ANGLE_MAX - SWEEP_ANGLE_MIN);
+        if ((s_ms - s_last_action) >= SWEEP_UPDATE_MS) {
+            float progress;
+            uint32_t phase = s_ms % SWEEP_PERIOD_MS;
+            if (phase < SWEEP_PERIOD_MS / 2U) {
+                progress = (float)phase / (float)(SWEEP_PERIOD_MS / 2U);
+                s_sweep_target = SWEEP_ANGLE_MIN +
+                    progress * (SWEEP_ANGLE_MAX - SWEEP_ANGLE_MIN);
+            } else {
+                progress = (float)(phase - SWEEP_PERIOD_MS / 2U) /
+                           (float)(SWEEP_PERIOD_MS / 2U);
+                s_sweep_target = SWEEP_ANGLE_MAX -
+                    progress * (SWEEP_ANGLE_MAX - SWEEP_ANGLE_MIN);
+            }
+            (void)CL_SetTargetAngle(MOTOR_AXIS_X, s_sweep_target);
+            s_last_action = s_ms;
         }
-        (void)CL_SetTargetAngle(MOTOR_AXIS_X, target);
         if ((s_ms - s_last_output) >= 500U) {
             s_last_output = s_ms;
-            uart_puts("Tgt="); uart_putf(target, 1);
+            uart_puts("Tgt="); uart_putf(s_sweep_target, 1);
             uart_puts(" Act="); uart_putf(CL_GetCurrentAngle(MOTOR_AXIS_X), 1);
+            uart_puts(" Fault="); uart_puts(Demo_FaultName(CL_GetFault(MOTOR_AXIS_X)));
             uart_puts("\r\n");
         }
     }
