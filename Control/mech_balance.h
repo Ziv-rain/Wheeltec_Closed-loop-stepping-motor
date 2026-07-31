@@ -16,6 +16,7 @@ typedef struct {
 void MechBalance_Init(void);
 void MechBalance_Tick5ms(void);
 void MechBalance_SetAccel(float ax_mps2);
+void MechBalance_SetAccelManual(float ax_mps2); /* A命令: 手动加速度, 不被衰减 */
 void MechBalance_SetParam(uint8_t id, float v);
 const MechParams_t *MechBalance_GetParams(void);
 void MechBalance_SetDirectAngle(float deg);

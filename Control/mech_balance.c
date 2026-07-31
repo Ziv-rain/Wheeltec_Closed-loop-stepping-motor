@@ -47,6 +47,7 @@ static uint8_t s_emergency_stop;
 static uint8_t s_ff_merge_enabled = MECH_FF_MERGE_ENABLE;
 static float s_ff_angle_deg;
 static uint32_t s_accel_age_ms;   /* 距上次SetAccel的时间, 超时前馈衰减回零 */
+static uint8_t s_accel_manual;    /* 1=手动A命令设置(不衰减), 0=编码器来源 */
 
 static float clampf(float value, float minimum, float maximum)
 {
@@ -148,10 +149,20 @@ void MechBalance_SetAccel(float ax_mps2)
     /* 物理合理上限: 比赛加速度<=2, 4.94/6.39等异常直接丢弃 */
     if (fabsf(ax_mps2) > 3.0f) return;
     s_accel_age_ms = 0U;
+    s_accel_manual = 0U;   /* 编码器来源: 断流时允许衰减 */
     /* EMA低通: 编码器两次差分噪声大, 0.5为新值权重(~2帧响应) */
     s_accel_mps2 = 0.50f * s_accel_mps2 + 0.50f * ax_mps2;
     /* 死区: 微小加速度忽略 */
     if (fabsf(s_accel_mps2) < 0.05f) s_accel_mps2 = 0.0f;
+}
+
+/* 手动A命令: 直接设置且不被断流衰减(测试前馈用) */
+void MechBalance_SetAccelManual(float ax_mps2)
+{
+    if (!finitef(ax_mps2) || fabsf(ax_mps2) > 3.0f) return;
+    s_accel_age_ms = 0U;
+    s_accel_manual = 1U;
+    s_accel_mps2 = ax_mps2;
 }
 
 uint8_t MechBalance_StartVision(void)
@@ -295,9 +306,9 @@ void MechBalance_Tick5ms(void)
     uint8_t ball_valid, new_frame;
 
     if (s_emergency_stop) return;
-    /* 编码器断流超时: 前馈平滑衰减回零, 摆杆不保持非水平角 */
+    /* 编码器断流超时: 前馈平滑衰减回零 (手动A命令设置不衰减) */
     if (s_accel_age_ms <= 0xFFFFFFFFU - 5U) s_accel_age_ms += 5U;
-    if (s_accel_age_ms > 500U) {
+    if (!s_accel_manual && s_accel_age_ms > 500U) {
         s_accel_mps2 *= 0.90f;
         if (fabsf(s_accel_mps2) < 0.05f) s_accel_mps2 = 0.0f;
     }

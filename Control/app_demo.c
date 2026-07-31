@@ -256,7 +256,7 @@ static void Demo_PollUart(void)
                 if (neg) v = -v;
                 if (has_digit) {
                     switch(c) {
-                    case 'A': MechBalance_SetAccel(v); uart_puts("OK accel="); uart_putf(v,3); break;
+                    case 'A': MechBalance_SetAccelManual(v); uart_puts("OK accel="); uart_putf(v,3); break;
                     case 'D': MechBalance_SetDirectAngle(v); uart_puts("OK dir="); uart_putf(v,2); break;
                     case 'T': MechBalance_SetParam(MP_TRIM, v); uart_puts("OK trim="); uart_putf(v,2); break;
                     case 'G': MechBalance_SetParam(MP_GAIN_FWD, v); uart_puts("OK fwd="); uart_putf(v,2); break;
