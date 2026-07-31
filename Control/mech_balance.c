@@ -28,6 +28,8 @@ static float s_ax = 0.0f;        /* 当前车辆加速度 m/s² */
 static float s_theta_prev = 0.0f; /* 上次输出的角度 (斜坡限制用) */
 static float s_phi_deg = 0.0f;    /* 当前前馈绝对角 */
 static float s_theta_cmd = 0.0f;  /* 当前机构命令角 */
+static uint8_t s_direct_mode = 0; /* 手动倾角模式 */
+static float s_direct_deg = 0.0f; /* 手动倾角值 */
 
 static float clampf(float v, float lo, float hi) { return v<lo?lo:(v>hi?hi:v); }
 
@@ -37,7 +39,18 @@ void MechBalance_Init(void)
     s_theta_prev = 0.0f;
     s_phi_deg = 0.0f;
     s_theta_cmd = 0.0f;
+    s_direct_mode = 0;
+    s_direct_deg = 0.0f;
 }
+
+void MechBalance_SetDirectAngle(float deg)
+{
+    s_direct_mode = 1;
+    s_direct_deg = deg;
+}
+
+void MechBalance_ExitDirect(void) { s_direct_mode = 0; }
+uint8_t MechBalance_IsDirect(void) { return s_direct_mode; }
 
 void MechBalance_SetAccel(float ax_mps2)
 {
@@ -64,6 +77,17 @@ const MechParams_t *MechBalance_GetParams(void) { return &mp; }
 void MechBalance_Tick5ms(void)
 {
     float gain, a_ff, phi_rad, theta_target, max_change;
+
+    /* 0. 手动倾角模式: 直接输出, 球沿坡滚动 */
+    if (s_direct_mode) {
+        theta_target = s_direct_deg;
+        theta_target = clampf(theta_target, mp.theta_min_deg, mp.theta_max_deg);
+        max_change = mp.theta_rate_limit * 0.005f;
+        s_theta_cmd = clampf(theta_target, s_theta_prev - max_change, s_theta_prev + max_change);
+        s_theta_prev = s_theta_cmd;
+        (void)CL_SetTargetAngle(MOTOR_AXIS_X, s_theta_cmd);
+        return;
+    }
 
     /* 1. 加速度前馈: 加速和制动用不同增益 */
     gain = (s_ax >= 0.0f) ? mp.accel_gain_fwd : mp.accel_gain_brake;

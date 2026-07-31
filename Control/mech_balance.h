@@ -20,6 +20,9 @@ void MechBalance_Tick5ms(void);
 void MechBalance_SetAccel(float ax_mps2);      /* 设置车辆纵向加速度 */
 void MechBalance_SetParam(uint8_t id, float v); /* 调参 (id见枚举) */
 const MechParams_t *MechBalance_GetParams(void);
+void MechBalance_SetDirectAngle(float deg);    /* 手动倾角模式: 直接设摆杆角 */
+void MechBalance_ExitDirect(void);             /* 退出手动模式, 回到力学补偿 */
+uint8_t MechBalance_IsDirect(void);            /* 是否处于手动模式 */
 
 /* 调参ID */
 #define MP_GRAVITY      0

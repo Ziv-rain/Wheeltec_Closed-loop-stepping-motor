@@ -205,7 +205,8 @@ static void Demo_PollUart(void)
                 if (neg) v = -v;
                 if (has_digit) {
                     switch(c) {
-                    case 'A': MechBalance_SetAccel(v); uart_puts("OK accel="); uart_putf(v,3); break;
+                    case 'A': MechBalance_ExitDirect(); MechBalance_SetAccel(v); uart_puts("OK accel="); uart_putf(v,3); break;
+                    case 'D': MechBalance_SetDirectAngle(v); uart_puts("OK dir="); uart_putf(v,2); break;
                     case 'T': MechBalance_SetParam(MP_TRIM, v); uart_puts("OK trim="); uart_putf(v,2); break;
                     case 'G': MechBalance_SetParam(MP_GAIN_FWD, v); uart_puts("OK fwd="); uart_putf(v,2); break;
                     case 'B': MechBalance_SetParam(MP_GAIN_BRAKE, v); uart_puts("OK brk="); uart_putf(v,2); break;
@@ -220,8 +221,8 @@ static void Demo_PollUart(void)
                 s_line_len = 0U;
             }
         }
-        /* A/T/G/B/L/R 命令开头 */
-        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r') {
+        /* A/T/G/B/L/R/D 命令开头 */
+        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d') {
             if (s_line_len < sizeof(s_line) - 1U) {
                 s_line[s_line_len++] = ch;
             }
