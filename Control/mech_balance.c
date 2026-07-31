@@ -1,16 +1,15 @@
 /**
- * mech_balance.c - 纯力学前馈补偿
+ * mech_balance.c - 纯力学前馈补偿 + 4步角度序列
  *
- * 核心公式: φ_ff = atan2(-a_x, g)
- * 机构角:   θ_cmd = φ_ff - β + θ_trim
- * 限幅 + 斜坡限制 -> CL_SetTargetAngle
- *
- * 不使用视觉位置误差, 不写位置PID
+ * 力学模式: θ_cmd = -arctan(a_x/g) - pitch + trim
+ * 序列模式: 4步 (角度/时长均可调), K 触发, 结束回水平
  */
 #include "mech_balance.h"
 #include "closed_loop.h"
 #include "board.h"
 #include <math.h>
+
+#define SEQ_STEPS 4U
 
 static MechParams_t mp = {
     .gravity       = 9.80665f,
@@ -22,21 +21,30 @@ static MechParams_t mp = {
     .pitch_deg = 0.0f,
 };
 
-static float s_ax = 0.0f;        /* 当前车辆加速度 m/s² */
-static float s_theta_prev = 0.0f; /* 上次输出的角度 (斜坡限制用) */
-static float s_phi_deg = 0.0f;    /* 当前前馈绝对角 */
-static float s_theta_cmd = 0.0f;  /* 当前机构命令角 */
-static uint8_t s_direct_mode = 0; /* 手动倾角模式 */
-static float s_direct_deg = 0.0f; /* 手动倾角值 */
+static float s_ax = 0.0f;
+static float s_theta_prev = 0.0f;
+static float s_phi_deg = 0.0f;
+static float s_theta_cmd = 0.0f;
+static uint8_t s_direct_mode = 0;
+static float s_direct_deg = 0.0f;
 
-/* 角度序列状态 */
+/* 4步序列: 每步角度(°)和时长(ms)独立可调 */
+static float s_seq_angles[SEQ_STEPS]   = { -2.0f, -0.5f, 1.5f, 0.0f };
+static uint32_t s_seq_times[SEQ_STEPS] = { 2000U, 1000U, 1000U, 3000U };
 static uint8_t s_seq_active = 0;
 static uint8_t s_seq_step = 0;
 static uint32_t s_seq_elapsed = 0;
-static float s_seq_angles[4] = { -2.0f, -0.5f, 1.5f, 0.0f }; /* 默认: 滚向D'→减速→刹车→水平 */
-static uint32_t s_seq_times[4] = { 2000U, 1000U, 1000U, 3000U }; /* 默认时长 ms */
 
 static float clampf(float v, float lo, float hi) { return v<lo?lo:(v>hi?hi:v); }
+
+/* 斜坡限制输出: 每5ms最多变化 rate*0.005 度 */
+static float slew(float target)
+{
+    float max_change = mp.theta_rate_limit * 0.005f;
+    s_theta_cmd = clampf(target, s_theta_prev - max_change, s_theta_prev + max_change);
+    s_theta_prev = s_theta_cmd;
+    return s_theta_cmd;
+}
 
 void MechBalance_Init(void)
 {
@@ -46,6 +54,9 @@ void MechBalance_Init(void)
     s_theta_cmd = 0.0f;
     s_direct_mode = 0;
     s_direct_deg = 0.0f;
+    s_seq_active = 0;
+    s_seq_step = 0;
+    s_seq_elapsed = 0;
 }
 
 void MechBalance_SetDirectAngle(float deg)
@@ -57,14 +68,16 @@ void MechBalance_SetDirectAngle(float deg)
 void MechBalance_ExitDirect(void) { s_direct_mode = 0; s_seq_active = 0; }
 uint8_t MechBalance_IsDirect(void) { return s_direct_mode; }
 
+/* 设置第 idx 步角度 (idx=0..3) */
 void MechBalance_SetSeqAngle(uint8_t idx, float deg)
 {
-    if (idx < 4U) s_seq_angles[idx] = deg;
+    if (idx < SEQ_STEPS) s_seq_angles[idx] = deg;
 }
 
+/* 设置第 idx 步时长 (idx=0..3, ms) */
 void MechBalance_SetSeqTime(uint8_t idx, uint32_t ms)
 {
-    if (idx < 4U) s_seq_times[idx] = ms;
+    if (idx < SEQ_STEPS) s_seq_times[idx] = ms;
 }
 
 void MechBalance_StartSeq(void)
@@ -100,55 +113,41 @@ const MechParams_t *MechBalance_GetParams(void) { return &mp; }
 
 void MechBalance_Tick5ms(void)
 {
-    float gain, a_ff, phi_rad, theta_target, max_change;
+    float gain, a_ff, phi_rad, theta_target;
 
-    /* 0. 角度序列: 4步依次执行, 每步时长后切换下一步 */
+    /* ---- 模式1: 4步角度序列 ---- */
     if (s_seq_active) {
         s_seq_elapsed += 5U;
         if (s_seq_elapsed >= s_seq_times[s_seq_step]) {
             s_seq_elapsed = 0U;
-            if (s_seq_step < 3U) s_seq_step++;
-            else { MechBalance_ExitDirect(); s_seq_step = 0; }  /* 序列结束: 退出直接模式, 回力学补偿(trim) */
+            if (s_seq_step < SEQ_STEPS - 1U) {
+                s_seq_step++;                    /* 进入下一步 */
+            } else {
+                s_seq_active = 0;                /* 最后一步结束 */
+                s_seq_step = 0;
+                MechBalance_ExitDirect();        /* 退出直接模式, 回力学补偿(trim) */
+            }
         }
-        s_direct_deg = s_seq_angles[s_seq_step];
-        theta_target = s_direct_deg;
-        max_change = mp.theta_rate_limit * 0.005f;
-        s_theta_cmd = clampf(theta_target, s_theta_prev - max_change, s_theta_prev + max_change);
-        s_theta_prev = s_theta_cmd;
-        (void)CL_SetTargetAngle(MOTOR_AXIS_X, s_theta_cmd);
+        if (s_seq_active) {
+            (void)CL_SetTargetAngle(MOTOR_AXIS_X, slew(s_seq_angles[s_seq_step]));
+        }
         return;
     }
 
-    /* 0. 手动倾角模式: 直接输出, 球沿坡滚动 */
+    /* ---- 模式2: 手动倾角 ---- */
     if (s_direct_mode) {
-        theta_target = s_direct_deg;
-        theta_target = theta_target;
-        max_change = mp.theta_rate_limit * 0.005f;
-        s_theta_cmd = clampf(theta_target, s_theta_prev - max_change, s_theta_prev + max_change);
-        s_theta_prev = s_theta_cmd;
-        (void)CL_SetTargetAngle(MOTOR_AXIS_X, s_theta_cmd);
+        (void)CL_SetTargetAngle(MOTOR_AXIS_X, slew(s_direct_deg));
         return;
     }
 
-    /* 1. 加速度前馈: 加速和制动用不同增益 */
+    /* ---- 模式3: 力学前馈补偿 ---- */
     gain = (s_ax >= 0.0f) ? mp.accel_gain_fwd : mp.accel_gain_brake;
     a_ff = gain * s_ax + mp.accel_bias;
 
-    /* 2. 纯力学补偿角 φ_ff = atan2(-a_ff, g) (弧度) */
     phi_rad = atan2f(-a_ff, mp.gravity);
-    s_phi_deg = phi_rad * 57.29578f;  /* rad -> deg */
+    s_phi_deg = phi_rad * 57.29578f;
 
-    /* 3. 机构相对角 θ_cmd = φ_ff - pitch + trim */
     theta_target = s_phi_deg - mp.pitch_deg + mp.theta_trim_deg;
 
-    /* 4. 角度限幅 */
-    theta_target = theta_target;
-
-    /* 5. 斜坡限制 (角度变化率) */
-    max_change = mp.theta_rate_limit * 0.005f;  /* dt=5ms */
-    s_theta_cmd = clampf(theta_target, s_theta_prev - max_change, s_theta_prev + max_change);
-    s_theta_prev = s_theta_cmd;
-
-    /* 6. 发给电机闭环 */
-    (void)CL_SetTargetAngle(MOTOR_AXIS_X, s_theta_cmd);
+    (void)CL_SetTargetAngle(MOTOR_AXIS_X, slew(theta_target));
 }

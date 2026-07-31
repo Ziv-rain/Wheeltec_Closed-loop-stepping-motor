@@ -199,6 +199,7 @@ static void Demo_PollUart(void)
                     if (s_line[1] >= '1' && s_line[1] <= '4') idx = (uint8_t)(s_line[1]-'1');
                     else { uart_puts("ERR idx\r\n"); s_line_len = 0U; continue; }
                 }
+                while (i < s_line_len && s_line[i] == ' ') i++;  /* 跳过前导空格 */
                 if (i < s_line_len && s_line[i] == '-') { neg = 1; i++; }
                 else if (i < s_line_len && s_line[i] == '+') { i++; }
                 while (i < s_line_len && s_line[i] >= '0' && s_line[i] <= '9') {
