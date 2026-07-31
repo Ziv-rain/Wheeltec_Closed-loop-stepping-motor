@@ -23,6 +23,9 @@ static void hstart(float p){uint8_t d=p<PWM_HORIZONTAL_REF?AXIS_X_POSITIVE_DIR_L
 static void htik(void){float p,e;if(hc==HC_READY||hc==HC_FAULT)return;if(hc==HC_INIT||hc==HC_WAIT){hm+=CL_PERIOD_MS;if(!Encoder_GetPwmAngle(ENCODER_AXIS_X,&p)){if(hm>=HOMING_WAIT_TIMEOUT_MS)hfail();return;}if(!sane(p)){hfail();return;}if(absf(p-PWM_HORIZONTAL_REF)<=PWM_HORIZONTAL_TOL){hfin();}else{hstart(p);}return;}hm+=CL_PERIOD_MS;if(hm>=HOMING_MOVE_TIMEOUT_MS){hfail();return;}if(!Encoder_GetPwmAngle(ENCODER_AXIS_X,&p)){pmm+=CL_PERIOD_MS;if(pmm>=HOMING_PWM_LOSS_TIMEOUT_MS)hfail();return;}pmm=0;if(!sane(p)){hfail();return;}e=absf(p-PWM_HORIZONTAL_REF);if(e<=PWM_HORIZONTAL_TOL){hfin();return;}if(e+0.05f<lherr){lherr=e;npm=0;}else{npm+=CL_PERIOD_MS;if(npm>=HOMING_NO_PROGRESS_MS){hfail();return;}}}
 
 void BallControl_Init(void){PID_Init(&sp,BALL_KP,BALL_KI,BALL_KD,PID_INTEGRAL_LIMIT,-MOTOR_MAX_ANGLE_NEG,MOTOR_MAX_ANGLE_POS);hc=HC_INIT;hm=0;pmm=0;npm=0;lherr=0;act=0;sm_init=0;}
+uint8_t BallControl_IsHomingReady(void){return hc==HC_READY?1U:0U;}
+uint8_t BallControl_HasFault(void){return hc==HC_FAULT?1U:0U;}
+void BallControl_EmergencyStop(void){hfail();}
 void BallControl_Tick5ms(void){
     BallData_t b;TaskInfo_t ti;float bp,out,pw,ca;
     htik();

@@ -28,8 +28,10 @@
 #define VIS_KD                      8.0f    /* 高微分: 抑制超调 */
 #define VIS_KI                      0.0f
 #define VIS_INTEGRAL_LIMIT          10.0f
-#define VIS_OUTPUT_LIMIT_DEG        50.0f   /* PID输出宽限幅±50°, 安全由PWM限位钳制 */
+#define VIS_OUTPUT_MIN_DEG          (-30.0f)
+#define VIS_OUTPUT_MAX_DEG          45.0f
 #define VIS_SETPOINT_CM             0.0f    /* 默认视觉目标位置(cm), 运行时可N命令修改 */
+#define VIS_SETPOINT_LIMIT_CM       9.0f
 
 /* PWM 绝对角度机械限位保护 (电机固定区间不跨0°/360°, 实测值) */
 #define PWM_LIMIT_HIGH              190.0f   /* 正极限 PWM 角度 (+50° 电机位置) */

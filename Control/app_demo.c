@@ -158,7 +158,12 @@ static void Demo_PollUart(void)
 #else
 #if (DEMO_SELECT == 7) || (DEMO_SELECT == 8)
         /* 模式7/8: 力学补偿调参 + 视觉PID */
-        if (ch == 'S' || ch == 's') {
+        if (ch == 'X' || ch == 'x') {
+            s_line_len = 0U;
+            MechBalance_EmergencyStop();
+            BallControl_EmergencyStop();
+            uart_puts("OK emergency stop latched; reboot required\r\n");
+        } else if (ch == 'S' || ch == 's') {
             CL_Snapshot_t snap; float pwm=0; uint8_t ok;
             CL_GetSnapshot(MOTOR_AXIS_X, &snap);
             ok = Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm);
@@ -170,6 +175,8 @@ static void Demo_PollUart(void)
                 VisionStatus_t vs;
                 MechBalance_GetVisionStatus(&vs);
                 uart_puts(" | VIS:act="); uart_putu(vs.active);
+                uart_puts(" valid="); uart_putu(vs.valid);
+                uart_puts(" fault="); uart_putu(vs.fault);
                 uart_puts(" sp="); uart_putf(vs.setpoint_cm, 2);
                 uart_puts(" ball="); uart_putf(vs.ball_pos_cm, 2);
                 uart_puts(" out="); uart_putf(vs.pid_out_deg, 2);
@@ -177,8 +184,7 @@ static void Demo_PollUart(void)
 #endif
             uart_puts("\r\n");
         } else if (ch == 'Z' || ch == 'z') {
-            CL_SetZero(MOTOR_AXIS_X);
-            uart_puts("Zero set\r\n");
+            uart_puts("ERR zero is owned by automatic homing\r\n");
         } else if (ch == 'P' || ch == 'p') {
             const MechParams_t *m = MechBalance_GetParams();
             uart_puts("g="); uart_putf(m->gravity,2);
@@ -189,8 +195,13 @@ static void Demo_PollUart(void)
             uart_puts("\r\n");
 #if (DEMO_SELECT == 8)
         } else if (ch == 'V' || ch == 'v') {
-            MechBalance_StartVision();
-            uart_puts("Vision PID started\r\n");
+            if (!BallControl_IsHomingReady()) {
+                uart_puts("ERR homing not ready\r\n");
+            } else if (MechBalance_StartVision()) {
+                uart_puts("Vision PID started\r\n");
+            } else {
+                uart_puts("ERR vision/PWM invalid\r\n");
+            }
         } else if (ch == 'W' || ch == 'w') {
             MechBalance_StopVision();
             uart_puts("Vision PID stopped\r\n");
@@ -206,8 +217,12 @@ static void Demo_PollUart(void)
                 if (c>='a'&&c<='z') c -= 32;
                 /* K: 单字符命令, 执行角度序列 */
                 if (c == 'K' && s_line_len == 1U) {
-                    MechBalance_StartSeq();
-                    uart_puts("OK seq start\r\n");
+                    if (BallControl_IsHomingReady()) {
+                        MechBalance_StartSeq();
+                        uart_puts("OK seq start\r\n");
+                    } else {
+                        uart_puts("ERR homing not ready\r\n");
+                    }
                     s_line_len = 0U;
                     continue;
                 }
@@ -244,7 +259,13 @@ static void Demo_PollUart(void)
                     case 'R': MechBalance_SetParam(MP_RATE_LIMIT, v); uart_puts("OK rate="); uart_putf(v,0); break;
                     case 'Q': MechBalance_SetSeqAngle(idx, v); uart_puts("OK seqA"); uart_putu((uint32_t)(idx+1)); uart_puts("="); uart_putf(v,2); break;
                     case 'E': MechBalance_SetSeqTime(idx, (uint32_t)v); uart_puts("OK seqT"); uart_putu((uint32_t)(idx+1)); uart_puts("="); uart_putu((uint32_t)v); break;
-                    case 'N': MechBalance_SetVisionSetpoint(v); uart_puts("OK vis_sp="); uart_putf(v,2); break;
+                    case 'N':
+                        if (MechBalance_SetVisionSetpoint(v)) {
+                            uart_puts("OK vis_sp="); uart_putf(v,2);
+                        } else {
+                            uart_puts("ERR vis_sp range");
+                        }
+                        break;
                     default: uart_puts("ERR cmd"); break;
                     }
                     uart_puts("\r\n");
@@ -355,7 +376,7 @@ void Demo_Init(void)
     uart_puts("  A/T/G/B/R/D  mech params (same as DEMO7)\r\n");
     uart_puts("  S        status (ball/vision)\r\n");
     uart_puts("  P        print params\r\n");
-    uart_puts("  Z        zero\r\n");
+    uart_puts("  X        immediate latched emergency stop\r\n");
 #else
     uart_puts("- Ball control mode (UART2 vision + PID)\r\n");
 #endif
@@ -377,9 +398,13 @@ void Demo_Tick5ms(void)
     CL_Process(); CL_Process(); CL_Process(); CL_Process();
 #elif (DEMO_SELECT == 8)
     ProtoRx_Tick(CL_PERIOD_MS);  /* 关键: 更新视觉数据age, 否则超时保护失效 */
-    BallControl_Tick5ms();       /* 仅回零: TaskCtrl不跑, PID永不启动 */
-    MechBalance_Tick5ms();
-    CL_Process(); CL_Process(); CL_Process(); CL_Process();
+    BallControl_Tick5ms();
+    if (BallControl_IsHomingReady()) {
+        MechBalance_Tick5ms();
+    } else if (BallControl_HasFault()) {
+        MechBalance_EmergencyStop();
+    }
+    CL_Process();
 #elif (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
     CL_Process();
 #endif

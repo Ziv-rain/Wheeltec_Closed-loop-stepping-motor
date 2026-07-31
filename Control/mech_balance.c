@@ -6,7 +6,6 @@
  */
 #include "mech_balance.h"
 #include "closed_loop.h"
-#include "board.h"
 #include "pid.h"
 #include "proto_rx.h"
 #include "encoder.h"
@@ -14,6 +13,10 @@
 #include <math.h>
 
 #define SEQ_STEPS 4U
+#define MECH_ANGLE_MIN_DEG (-30.0f)
+#define MECH_ANGLE_MAX_DEG 45.0f
+#define SEQ_TIME_MIN_MS 5U
+#define SEQ_TIME_MAX_MS 10000U
 
 static MechParams_t mp = {
     .gravity       = 9.80665f,
@@ -34,7 +37,7 @@ static float s_direct_deg = 0.0f;
 
 /* 4步序列: 每步角度(°)和时长(ms)独立可调 */
 static float s_seq_angles[SEQ_STEPS]   = { -10.0f, 10.0f, 0.0f, 0.0f };
-static uint32_t s_seq_times[SEQ_STEPS] = { 600U, 750U, 0U, 0U };
+static uint32_t s_seq_times[SEQ_STEPS] = { 600U, 750U, 5U, 5U };
 static uint8_t s_seq_active = 0;
 static uint8_t s_seq_step = 0;
 static uint32_t s_seq_elapsed = 0;
@@ -46,7 +49,9 @@ static float    s_vis_setpoint_cm = VIS_SETPOINT_CM;
 static uint8_t  s_seq_auto_vis = 0;     /* 序列结束自动启动视觉 */
 static float    s_vis_ball_pos_cm = 0.0f; /* 状态显示缓存 */
 static float    s_vis_pid_out = 0.0f;     /* 状态显示缓存 */
-static uint8_t  s_vis_warned = 0;         /* 丢失警告去抖 */
+static uint8_t  s_vis_valid = 0;
+static uint8_t  s_vis_fault = 0;
+static uint8_t  s_emergency_stop = 0;
 
 static float clampf(float v, float lo, float hi) { return v<lo?lo:(v>hi?hi:v); }
 
@@ -54,6 +59,7 @@ static float clampf(float v, float lo, float hi) { return v<lo?lo:(v>hi?hi:v); }
 static float slew(float target)
 {
     float max_change = mp.theta_rate_limit * 0.005f;
+    target = clampf(target, MECH_ANGLE_MIN_DEG, MECH_ANGLE_MAX_DEG);
     s_theta_cmd = clampf(target, s_theta_prev - max_change, s_theta_prev + max_change);
     s_theta_prev = s_theta_cmd;
     return s_theta_cmd;
@@ -71,17 +77,20 @@ void MechBalance_Init(void)
     s_seq_step = 0;
     s_seq_elapsed = 0;
     PID_Init(&s_vis_pid, VIS_KP, VIS_KI, VIS_KD, VIS_INTEGRAL_LIMIT,
-             -VIS_OUTPUT_LIMIT_DEG, +VIS_OUTPUT_LIMIT_DEG);
+             VIS_OUTPUT_MIN_DEG, VIS_OUTPUT_MAX_DEG);
     s_vis_active = 0;
     s_vis_setpoint_cm = VIS_SETPOINT_CM;
     s_seq_auto_vis = 0;
     s_vis_ball_pos_cm = 0.0f;
     s_vis_pid_out = 0.0f;
-    s_vis_warned = 0;
+    s_vis_valid = 0;
+    s_vis_fault = 0;
+    s_emergency_stop = 0;
 }
 
 void MechBalance_SetDirectAngle(float deg)
 {
+    if (s_emergency_stop || deg < MECH_ANGLE_MIN_DEG || deg > MECH_ANGLE_MAX_DEG) return;
     MechBalance_StopVision();
     s_direct_mode = 1;
     s_direct_deg = deg;
@@ -93,17 +102,25 @@ uint8_t MechBalance_IsDirect(void) { return s_direct_mode; }
 /* 设置第 idx 步角度 (idx=0..3) */
 void MechBalance_SetSeqAngle(uint8_t idx, float deg)
 {
-    if (idx < SEQ_STEPS) s_seq_angles[idx] = deg;
+    if (!s_seq_active && idx < SEQ_STEPS &&
+        deg >= MECH_ANGLE_MIN_DEG && deg <= MECH_ANGLE_MAX_DEG) {
+        s_seq_angles[idx] = deg;
+    }
 }
 
 /* 设置第 idx 步时长 (idx=0..3, ms) */
 void MechBalance_SetSeqTime(uint8_t idx, uint32_t ms)
 {
-    if (idx < SEQ_STEPS) s_seq_times[idx] = ms;
+    if (!s_seq_active && idx < SEQ_STEPS &&
+        ms >= SEQ_TIME_MIN_MS && ms <= SEQ_TIME_MAX_MS &&
+        (ms % 5U) == 0U) {
+        s_seq_times[idx] = ms;
+    }
 }
 
 void MechBalance_StartSeq(void)
 {
+    if (s_emergency_stop) return;
     MechBalance_StopVision();
     s_seq_active = 1;
     s_seq_step = 0;
@@ -123,23 +140,33 @@ void MechBalance_SetAccel(float ax_mps2)
 static void VisHold(void)
 {
     s_vis_active = 0;
+    s_vis_valid = 0;
+    s_vis_fault = 1;
     PID_Reset(&s_vis_pid);
     s_direct_mode = 1;
-    s_direct_deg = s_theta_cmd;
-    if (!s_vis_warned) {
-        s_vis_warned = 1;
-        uart_puts("VISION LOST\r\n");
-    }
+    s_direct_deg = mp.theta_trim_deg;
+    s_vis_pid_out = mp.theta_trim_deg;
 }
 
-void MechBalance_StartVision(void)
+uint8_t MechBalance_StartVision(void)
 {
+    BallData_t ball;
+    float pwm;
+    if (s_emergency_stop || !ProtoRx_GetBall(&ball) ||
+        !Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm) ||
+        pwm <= PWM_LIMIT_LOW || pwm >= PWM_LIMIT_HIGH) {
+        VisHold();
+        return 0U;
+    }
     s_seq_active = 0;
     s_seq_step = 0;
     s_vis_active = 1;
-    s_vis_warned = 0;
     s_direct_mode = 0;
+    s_vis_valid = 1;
+    s_vis_fault = 0;
+    s_vis_ball_pos_cm = (float)ball.position_centi_cm / 100.0f;
     PID_Reset(&s_vis_pid);
+    return 1U;
 }
 
 void MechBalance_StopVision(void)
@@ -147,13 +174,19 @@ void MechBalance_StopVision(void)
     if (s_vis_active) {
         s_vis_active = 0;
         PID_Reset(&s_vis_pid);
-        s_vis_warned = 0;
     }
 }
 
 uint8_t MechBalance_IsVisionActive(void) { return s_vis_active; }
 
-void MechBalance_SetVisionSetpoint(float cm) { s_vis_setpoint_cm = cm; }
+uint8_t MechBalance_SetVisionSetpoint(float cm)
+{
+    if (cm != cm || cm < -VIS_SETPOINT_LIMIT_CM ||
+        cm > VIS_SETPOINT_LIMIT_CM) return 0U;
+    s_vis_setpoint_cm = cm;
+    PID_Reset(&s_vis_pid);
+    return 1U;
+}
 
 void MechBalance_SetSeqAutoVision(uint8_t en) { s_seq_auto_vis = en; }
 
@@ -161,10 +194,22 @@ void MechBalance_GetVisionStatus(VisionStatus_t *s)
 {
     if (s) {
         s->active = s_vis_active;
+        s->valid = s_vis_valid;
+        s->fault = s_vis_fault;
         s->ball_pos_cm = s_vis_ball_pos_cm;
         s->setpoint_cm = s_vis_setpoint_cm;
         s->pid_out_deg = s_vis_pid_out;
     }
+}
+
+void MechBalance_EmergencyStop(void)
+{
+    s_emergency_stop = 1U;
+    s_seq_active = 0U;
+    s_vis_active = 0U;
+    s_direct_mode = 0U;
+    PID_Reset(&s_vis_pid);
+    CL_Stop(MOTOR_AXIS_X);
 }
 
 void MechBalance_SetParam(uint8_t id, float v)
@@ -184,10 +229,21 @@ const MechParams_t *MechBalance_GetParams(void) { return &mp; }
 
 void MechBalance_Tick5ms(void)
 {
-    float gain, a_ff, phi_rad, theta_target;
+    float gain, a_ff, phi_rad, theta_target, pwm;
+    if (s_emergency_stop) return;
+    if (!Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm) ||
+        pwm <= PWM_LIMIT_LOW || pwm >= PWM_LIMIT_HIGH) {
+        MechBalance_EmergencyStop();
+        return;
+    }
 
     /* ---- 模式1: 4步角度序列 ---- */
     if (s_seq_active) {
+        if (CL_SetTargetAngle(MOTOR_AXIS_X,
+                              slew(s_seq_angles[s_seq_step])) != MOTOR_OK) {
+            MechBalance_EmergencyStop();
+            return;
+        }
         s_seq_elapsed += 5U;
         if (s_seq_elapsed >= s_seq_times[s_seq_step]) {
             s_seq_elapsed = 0U;
@@ -198,14 +254,11 @@ void MechBalance_Tick5ms(void)
                 s_seq_step = 0;
                 s_direct_mode = 0;
                 if (s_seq_auto_vis) {
-                    MechBalance_StartVision();   /* DEMO8: 粗定位后自动进视觉精调 */
+                    (void)MechBalance_StartVision(); /* 数据无效则安全回水平 */
                 } else {
                     MechBalance_ExitDirect();    /* DEMO7: 原行为, 回力学补偿(trim) */
                 }
             }
-        }
-        if (s_seq_active) {
-            (void)CL_SetTargetAngle(MOTOR_AXIS_X, slew(s_seq_angles[s_seq_step]));
         }
         return;
     }
@@ -215,16 +268,27 @@ void MechBalance_Tick5ms(void)
         BallData_t b; float bp, out, pw, ca;
         if (!ProtoRx_GetBall(&b)) { VisHold(); return; }
         if (!Encoder_GetPwmAngle(ENCODER_AXIS_X, &pw) ||
-            pw < PWM_LIMIT_LOW - PWM_LIMIT_MARGIN ||
-            pw > PWM_LIMIT_HIGH + PWM_LIMIT_MARGIN) { VisHold(); return; }
+            pw <= PWM_LIMIT_LOW || pw >= PWM_LIMIT_HIGH) {
+            VisHold();
+            return;
+        }
         bp = (float)b.position_centi_cm / 100.0f;
+        if (bp < -VIS_SETPOINT_LIMIT_CM || bp > VIS_SETPOINT_LIMIT_CM) {
+            VisHold();
+            return;
+        }
+        s_vis_valid = 1;
+        s_vis_fault = 0;
         s_vis_ball_pos_cm = bp;
         out = PID_Update(&s_vis_pid, bp - s_vis_setpoint_cm, 0.005f);
         ca = CL_GetCurrentAngle(MOTOR_AXIS_X);
         if (pw >= PWM_LIMIT_HIGH - PWM_LIMIT_MARGIN && out > ca) out = ca;
         if (pw <= PWM_LIMIT_LOW  + PWM_LIMIT_MARGIN && out < ca) out = ca;
         s_vis_pid_out = out;
-        (void)CL_SetTargetAngle(MOTOR_AXIS_X, slew(out));
+        out = clampf(out, MECH_ANGLE_MIN_DEG, MECH_ANGLE_MAX_DEG);
+        if (CL_SetTargetAngle(MOTOR_AXIS_X, slew(out)) != MOTOR_OK) {
+            MechBalance_EmergencyStop();
+        }
         return;
     }
 
