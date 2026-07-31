@@ -81,7 +81,7 @@ static float estimate_velocity(NativeV3_Controller_t *controller)
     }
     elapsed_ms = controller->history_time_ms[newest] -
                  controller->history_time_ms[oldest];
-    if (elapsed_ms < 20U || elapsed_ms > 300U) return 0.0f;
+    if (elapsed_ms < 10U || elapsed_ms > 300U) return 0.0f;  /* 60Hz视觉=16.7ms */
 
     raw_velocity = (controller->history_position_cm[newest] -
                     controller->history_position_cm[oldest]) *
@@ -430,7 +430,7 @@ uint8_t NativeV3_ObserveDirect(NativeV3_Controller_t *controller,
 
     sample_ms = controller->now_ms - controller->last_sample_ms;
     if (controller->history_count != 0U &&
-        (sample_ms < 20U || sample_ms > 200U)) {
+        (sample_ms < 10U || sample_ms > 200U)) {  /* 60Hz视觉=16.7ms */
         clear_history(controller);
         sample_ms = 50U;
     }

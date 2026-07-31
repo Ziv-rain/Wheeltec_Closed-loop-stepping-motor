@@ -4,6 +4,7 @@
 typedef struct {
     int16_t position_centi_cm;
     uint8_t confidence, status;
+    int16_t velocity_centi_cm_s; /* 视觉端差分速度 (cm/s×100), 0=不可用 */
     uint32_t age_ms;
     uint32_t frame_id; /* 每收到一帧合法视觉数据递增 */
 } BallData_t;
