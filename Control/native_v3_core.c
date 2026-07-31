@@ -295,8 +295,8 @@ void NativeV3_DefaultConfig(NativeV3_Config_t *cfg)
     cfg->stiction_velocity_cm_s = 0.30f;
     cfg->moving_velocity_cm_s = 0.40f;   /* 释放速度提高: 球需真正滚起来才释放 */
     cfg->stiction_confirm_ms = 300U;
-    cfg->breakaway_positive_deg = 3.50f;
-    cfg->breakaway_negative_deg = -6.00f;   /* 与PID限幅-6统一, 避免被裁剪(无效设置) */
+    cfg->breakaway_positive_deg = 6.00f;     /* 与限幅一致, 卡住全力推 */
+    cfg->breakaway_negative_deg = -6.00f;   /* 与限幅一致 */
     cfg->breakaway_release_cm = 0.25f;   /* 释放位移提高: 推出静摩擦区才释放 */
     cfg->breakaway_max_ms = 300U;        /* 脱困时间延长: 更多时间推球 */
 
