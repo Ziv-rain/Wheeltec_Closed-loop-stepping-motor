@@ -25,3 +25,5 @@ Debug/.clangd/
 # Temp
 *.swp
 *.bak
+__pycache__/
+*.pyc
