@@ -44,7 +44,7 @@
 
 /* PWM 绝对角度机械限位保护 (电机固定区间不跨0°/360°, 实测值) */
 #define PWM_LIMIT_HIGH              190.0f   /* 正极限 PWM 角度 (+50° 电机位置) */
-#define PWM_LIMIT_LOW               105.0f   /* 负极限 PWM 角度 (-35° 电机位置) */
+#define PWM_LIMIT_LOW               97.10f   /* 负极限 PWM 角度 (实测机械极限) */
 #define PWM_LIMIT_MARGIN            2.0f     /* 限位保护预留余量 (°) */
 
 /* 上电自动零点标定 (赛前调水平后读 PWM 填入, 比赛现场无需电脑) */
