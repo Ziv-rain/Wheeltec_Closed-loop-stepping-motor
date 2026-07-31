@@ -269,10 +269,10 @@ void MechBalance_SetParam(uint8_t id, float value)
         if (value >= 8.0f && value <= 11.0f) s_params.gravity = value;
         break;
     case MP_GAIN_FWD:
-        if (value >= 0.0f && value <= 2.0f) s_params.accel_gain_fwd = value;
+        if (value >= 0.0f && value <= 5.0f) s_params.accel_gain_fwd = value;
         break;
     case MP_GAIN_BRAKE:
-        if (value >= 0.0f && value <= 2.0f) s_params.accel_gain_brake = value;
+        if (value >= 0.0f && value <= 5.0f) s_params.accel_gain_brake = value;
         break;
     case MP_ACCEL_BIAS:
         if (value >= -3.0f && value <= 3.0f) s_params.accel_bias = value;
