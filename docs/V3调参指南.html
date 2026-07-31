@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>V3 状态机 + 加速度前馈 — 详细调参指南</title>
+<title>V3 状态机 + 加速度前馈 - 详细调参指南</title>
 <style>
   :root {
     --bg: #0d1117; --card: #161b22; --border: #30363d;
@@ -37,13 +37,10 @@
   .flow-num.green { background: var(--green); }
   .flow-num.yellow { background: var(--yellow); }
   .flow-num.purple { background: var(--purple); }
+  .flow-num.red { background: var(--red); }
   .flow-body { flex: 1; }
   .flow-body .title { font-weight: 600; }
   .flow-body .detail { font-size: 0.9em; color: var(--muted); }
-  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 600; }
-  .tag-hw { background: #2d1f1a; color: var(--red); }
-  .tag-sw { background: #1a2332; color: var(--accent); }
-  .tag-cfg { background: #2a2416; color: var(--yellow); }
   .toc { background: var(--card); border-radius: 10px; padding: 16px 20px; }
   .toc a { color: var(--accent); text-decoration: none; }
   .toc a:hover { text-decoration: underline; }
@@ -53,18 +50,18 @@
 </head>
 <body>
 
-<h1>🎯 V3 状态机 + 加速度前馈<br><small style="color:var(--muted)">详细调参指南 · feat/accel-fusion</small></h1>
+<h1>🎯 V3 状态机 + 加速度前馈<br><small style="color:var(--muted)">详细调参指南 · feat/accel-fusion · 2026-08-01</small></h1>
 
 <div class="toc">
   <h3 style="margin-top:0">📑 目录</h3>
   <ul>
     <li><a href="#arch">1. 系统架构与串口分工</a></li>
-    <li><a href="#philosophy">2. V3 调参哲学(与旧版根本区别)</a></li>
-    <li><a href="#cmds">3. 串口命令速查</a></li>
-    <li><a href="#phase1">4. 第一阶段:纯 V3 状态机调参(F0)</a></li>
-    <li><a href="#phase2">5. 第二阶段:前馈融合调参(F1)</a></li>
-    <li><a href="#v3internal">6. V3 内部参数(改代码)</a></li>
-    <li><a href="#workflow">7. 完整调参流程(从零开始)</a></li>
+    <li><a href="#philosophy">2. V3 调参哲学</a></li>
+    <li><a href="#cmds">3. 串口命令速查 + S 输出解读</a></li>
+    <li><a href="#params">4. 当前固化参数一览</a></li>
+    <li><a href="#phase1">5. 第一阶段:调球控制(纯 V3, F0)</a></li>
+    <li><a href="#phase2">6. 第二阶段:调前馈(F1, A 命令法)</a></li>
+    <li><a href="#phase3">7. 第三阶段:实战验证(小车启动)</a></li>
     <li><a href="#trouble">8. 常见问题排查</a></li>
     <li><a href="#checklist">9. 赛前检查清单</a></li>
   </ul>
@@ -75,314 +72,307 @@
 
 <div class="card">
   <h4>控制链</h4>
-  <pre><code>视觉 60Hz ──→ UART2 ──→ ProtoRx ──→ NativeV3 状态机 ──→ correction ──┐
+  <pre><code>视觉 60Hz ──-> UART2 ──-> ProtoRx ──-> NativeV3 状态机 ──-> correction ──┐
   (MaixCam)              (0x30帧)     ROLLING/BREAKAWAY/                 │
-                                      SETTLED/VISION_HOLD               ├──→ 融合
+                                      SETTLED/VISION_HOLD               ├──-> 融合
                                                                         │
-车轮编码器 ──→ UART1 ──→ SetAccel ──→ acceleration_base_angle() ──→ ff_base ─┘
+车轮编码器 ──-> UART1 ──-> SetAccel ──-> acceleration_base_angle() ──-> ff_base ─┘
  (主控9600)  (0x42帧)                                     (atan2(-a,g))
                                                                         │
-                                                              target = ff + correction
+                                         target = ff_base + correction (F1)
+                                                 trim + correction      (F0)
                                                                         │
-                                                              CL_SetTargetAngle → 电机
+                                              CL_SetTargetAngle -> 电机
 </code></pre>
 
   <h4>三个串口</h4>
   <table>
     <tr><th>串口</th><th>引脚</th><th>波特率</th><th>用途</th></tr>
-    <tr><td><strong>UART0</strong></td><td>PA28(TX)/PA31(RX)</td><td>115200</td><td>🛠️ <strong>调参命令</strong>(ASCII文本+回车)</td></tr>
+    <tr><td><strong>UART0</strong></td><td>PA28(TX)/PA31(RX)</td><td>115200</td><td>🛠️ <strong>调参命令</strong>(ASCII文本+回车) + 自动S输出(500ms)</td></tr>
     <tr><td>UART1</td><td>PA17(TX)/PA18(RX)</td><td>9600</td><td>主控 AA55 协议(0x40命令/0x41状态/0x42编码器)</td></tr>
     <tr><td>UART2</td><td>PA21(TX)/PA22(RX)</td><td>115200</td><td>视觉数据(0x30球位置/0x31触摸目标)</td></tr>
   </table>
-  <div class="warn"><strong>⚠️ 调参命令只发 UART0!</strong> 发到 UART1 会被当无效帧丢弃。UART0 用 ASCII 文本,不是 HEX。</div>
+  <div class="warn"><strong>⚠️ 调参命令只发 UART0!</strong> 发到 UART1 会被当无效帧丢弃。UART0 用 ASCII 文本(不是 HEX),命令以回车结尾。</div>
 </div>
 
 <!-- ============ 2. 哲学 ============ -->
-<h2 id="philosophy">2. V3 调参哲学(与旧版根本区别)</h2>
+<h2 id="philosophy">2. V3 调参哲学</h2>
 
 <div class="card">
   <table>
     <tr><th></th><th>旧版(单环PID)</th><th>V3(状态机)</th></tr>
-    <tr><td>位置增益</td><td>KP=3.0 高增益硬推</td><td>KP=0.80 低增益</td></tr>
-    <tr><td>静摩擦</td><td>靠高KP硬突破</td><td><strong>BREAKAWAY 脱困</strong>:+3.2°/-5.2° 大角度冲一下,球一动就卸力</td></tr>
-    <tr><td>球稳定</td><td>PID 持续微调(可能抖)</td><td><strong>SETTLED 锁定</strong>:输出归零,不抖不耗</td></tr>
+    <tr><td>位置增益</td><td>KP=3.0~5.0 高增益硬推</td><td>KP=0.8~1.5 低增益</td></tr>
+    <tr><td>静摩擦</td><td>靠高KP硬突破(易振荡)</td><td><strong>BREAKAWAY 脱困</strong>:卡住300ms全力6°冲,球一动就释放</td></tr>
+    <tr><td>球稳定</td><td>PID 持续微调(可能抖)</td><td><strong>SETTLED 锁定</strong>:±0.5cm内输出归零,不抖不耗</td></tr>
     <tr><td>视觉丢失</td><td>保持最后角度(球继续跑)</td><td><strong>20°/s 缓回水平</strong>,球不乱跑</td></tr>
     <tr><td>帧率处理</td><td>5ms 重复算同一帧(积分虚增)</td><td><strong>新帧才算</strong>,5ms只做安全检查</td></tr>
-    <tr><td>车体扰动</td><td>无补偿,球先跑PID再追</td><td><strong>加速度前馈</strong>:提前倾角抵消惯性</td></tr>
+    <tr><td>车体扰动</td><td>无补偿</td><td><strong>加速度前馈</strong>:提前倾角抵消惯性</td></tr>
   </table>
-
   <div class="tip">
-    <strong>💡 核心思维转变:</strong> 旧版调参是"调大KP直到能推动,再调KD压振荡"。
-    V3 是"<strong>增益保持低,让状态机去做重活</strong>"——推不动找脱困角度,稳定后找锁定阈值,车动了找前馈增益。
+    <strong>💡 核心思维:</strong> 不要靠高 KP 硬推。KP 低一点 + 脱困机制 = 推得动且不振荡。
+    前馈和 PID 是<strong>叠加</strong>关系:前馈预判车体惯性,PID 纠正球位置偏差。
   </div>
 </div>
 
-<!-- ============ 3. 命令速查 ============ -->
-<h2 id="cmds">3. 串口命令速查</h2>
+<!-- ============ 3. 命令 ============ -->
+<h2 id="cmds">3. 串口命令速查 + S 输出解读</h2>
 
 <div class="card">
   <table>
-    <tr><th>命令</th><th>参数</th><th>范围</th><th>默认</th><th>作用</th><th>阶段</th></tr>
-    <tr><td><code>V</code></td><td>—</td><td>—</td><td>—</td><td>启动视觉控制</td><td>—</td></tr>
-    <tr><td><code>W</code></td><td>—</td><td>—</td><td>—</td><td>停止视觉控制</td><td>—</td></tr>
-    <tr><td><code>F &lt;0/1&gt;</code></td><td>开关</td><td>0/1</td><td>1</td><td><strong>前馈融合开关</strong></td><td>对比用</td></tr>
-    <tr><td><code>J &lt;值&gt;</code></td><td>KP</td><td>0.2~3.0</td><td>0.80</td><td>位置增益 deg/cm</td><td>①</td></tr>
-    <tr><td><code>M &lt;值&gt;</code></td><td>KD</td><td>0~1.0</td><td>0.50</td><td>速度阻尼</td><td>①</td></tr>
-    <tr><td><code>I &lt;值&gt;</code></td><td>KI</td><td>0~0.08</td><td>0.02</td><td>积分(条件启用)</td><td>①</td></tr>
-    <tr><td><code>O / U &lt;值&gt;</code></td><td>输出限幅</td><td>±1~10</td><td>±6</td><td>状态机输出范围</td><td>①</td></tr>
-    <tr><td><code>T &lt;值&gt;</code></td><td>trim</td><td>±4°</td><td>0</td><td>静态零偏补偿</td><td>①</td></tr>
-    <tr><td><code>G &lt;值&gt;</code></td><td>前馈前进增益</td><td>0~2.0</td><td>1.0</td><td>加速时补偿强度</td><td>②</td></tr>
-    <tr><td><code>B &lt;值&gt;</code></td><td>前馈刹车增益</td><td>0~2.0</td><td>1.0</td><td>刹车时补偿强度</td><td>②</td></tr>
-    <tr><td><code>L / R &lt;值&gt;</code></td><td>速率限制</td><td>10~80°/s</td><td>80</td><td>电机动作快慢</td><td>②</td></tr>
-    <tr><td><code>A &lt;值&gt;</code></td><td>加速度</td><td>±30 m/s²</td><td>0</td><td>手动模拟前馈输入</td><td>②</td></tr>
-    <tr><td><code>N &lt;值&gt;</code></td><td>目标位置</td><td>±9 cm</td><td>0</td><td>setpoint</td><td>—</td></tr>
-    <tr><td><code>S</code></td><td>—</td><td>—</td><td>—</td><td>状态查询(关键!)</td><td>—</td></tr>
-    <tr><td><code>P</code></td><td>—</td><td>—</td><td>—</td><td>参数查询</td><td>—</td></tr>
-    <tr><td><code>D &lt;角度&gt;</code></td><td>直接角度</td><td>±30~45°</td><td>—</td><td>手动倾角(测试用)</td><td>—</td></tr>
-    <tr><td><code>X</code></td><td>—</td><td>—</td><td>—</td><td>紧急停止(锁死需重启)</td><td>—</td></tr>
+    <tr><th>命令</th><th>参数</th><th>范围</th><th>默认</th><th>作用</th></tr>
+    <tr><td><code>V</code></td><td>-</td><td>-</td><td>-</td><td>启动视觉控制(act=1)</td></tr>
+    <tr><td><code>W</code></td><td>-</td><td>-</td><td>-</td><td>停止视觉控制(act=0)</td></tr>
+    <tr><td><code>F &lt;0/1&gt;</code></td><td>开关</td><td>0/1</td><td>1</td><td><strong>前馈融合开关</strong>(对比用)</td></tr>
+    <tr><td><code>J &lt;值&gt;</code></td><td>KP</td><td>0.2~8.0</td><td>0.80</td><td>位置增益 deg/cm</td></tr>
+    <tr><td><code>M &lt;值&gt;</code></td><td>KD</td><td>0~1.0</td><td>0.50</td><td>速度阻尼</td></tr>
+    <tr><td><code>I &lt;值&gt;</code></td><td>KI</td><td>0~0.08</td><td>0.02</td><td>积分(条件启用)</td></tr>
+    <tr><td><code>O / U &lt;值&gt;</code></td><td>输出限幅</td><td>±1~10</td><td>±6</td><td>状态机输出范围</td></tr>
+    <tr><td><code>T &lt;值&gt;</code></td><td>trim</td><td>±4°</td><td>0</td><td>静态零偏补偿</td></tr>
+    <tr><td><code>G &lt;值&gt;</code></td><td>前馈前进增益</td><td>0~2.0</td><td>1.0</td><td>加速时补偿强度(斜率)</td></tr>
+    <tr><td><code>B &lt;值&gt;</code></td><td>前馈刹车增益</td><td>0~2.0</td><td>1.0</td><td>刹车时补偿强度</td></tr>
+    <tr><td><code>E &lt;值&gt;</code></td><td><strong>前馈限幅</strong></td><td>4~30°</td><td>30</td><td>前馈角度上限</td></tr>
+    <tr><td><code>A &lt;值&gt;</code></td><td>手动加速度</td><td>±3</td><td>0</td><td>模拟加速度(不衰减,测试用)</td></tr>
+    <tr><td><code>N &lt;值&gt;</code></td><td>目标位置</td><td>±9 cm</td><td>0</td><td>setpoint</td></tr>
+    <tr><td><code>S</code></td><td>-</td><td>-</td><td>-</td><td>状态查询(也每500ms自动输出)</td></tr>
+    <tr><td><code>P</code></td><td>-</td><td>-</td><td>-</td><td>参数查询</td></tr>
+    <tr><td><code>D &lt;角度&gt;</code></td><td>直接角度</td><td>±30~45°</td><td>-</td><td>手动倾角(测试用)</td></tr>
+    <tr><td><code>X</code></td><td>-</td><td>-</td><td>-</td><td>紧急停止(锁死需重启)</td></tr>
   </table>
 </div>
 
 <div class="card">
   <h4>S 命令输出解读</h4>
-  <pre><code>Tgt=2.00 Act=1.98 PWM=135.2 | VIS: act=1 valid=1 sp=0.00 ball=0.35 vel=2.10 out=1.05 KP=0.80 KD=0.50 omin=-6.0 omax=6.0 ff=0.12 ax=1.05 merged=1
-                                                                                                                    ↑       ↑         ↑
-                                                                                                            前馈分量  加速度    融合开关
+  <pre><code>Tgt=4.41 Act=4.23 PWM=138.35 | VIS: act=1 valid=1 sp=0.00 ball=5.48 vel=0.00 out=4.38 KP=0.80 KD=0.50 omin=-6.0 omax=6.0 ff=0.00 ax=0.00 merged=1
+ │         │         │              │         │        │        │       │       │                     │       │         ↑
+ 目标角    实际角    PWM绝对角       是否启动   视觉有效  目标位置  球位置  球速度  PID输出              前馈角  加速度    融合开关
 </code></pre>
   <table>
-    <tr><th>字段</th><th>含义</th><th>判断</th></tr>
-    <tr><td><code>act</code></td><td>是否请求控制(V/赛题启动)</td><td>1=运行中</td></tr>
-    <tr><td><code>valid</code></td><td>视觉数据是否有效</td><td>1=有数据,0=丢失</td></tr>
+    <tr><th>字段</th><th>含义</th><th>诊断价值</th></tr>
+    <tr><td><code>act</code></td><td>是否启动</td><td>0=待机(电机不动) 1=运行中</td></tr>
+    <tr><td><code>valid</code></td><td>视觉有效</td><td>0=丢失 1=正常</td></tr>
     <tr><td><code>ball</code></td><td>球位置 (cm)</td><td>应接近 sp</td></tr>
-    <tr><td><code>vel</code></td><td>球速度 (cm/s)</td><td>稳定时≈0</td></tr>
-    <tr><td><code>out</code></td><td>当前输出角度 (°)</td><td>应在 ±6 内</td></tr>
-    <tr><td><code>ff</code></td><td><strong>前馈分量</strong> (°)</td><td>ax=0 时应≈trim;推车时应跟随 ax 变</td></tr>
-    <tr><td><code>ax</code></td><td><strong>当前加速度</strong> (m/s²)</td><td>停车时≈0</td></tr>
-    <tr><td><code>merged</code></td><td>前馈融合是否激活</td><td>1=F1且已启动</td></tr>
+    <tr><td><code>vel</code></td><td>球速度 (cm/s)</td><td>稳定时≈0;卡住时=0但ball≠sp</td></tr>
+    <tr><td><code>out</code></td><td>PID修正输出 (°)</td><td>=KP×ball±KD×vel;卡住说明out不够推</td></tr>
+    <tr><td><code>ff</code></td><td><strong>前馈分量</strong> (°)</td><td>ax=0时应=0;ax≠0时应跟随;恒0=数据没来</td></tr>
+    <tr><td><code>ax</code></td><td><strong>加速度</strong> (m/s²)</td><td>车不动应=0;启动时应变化;恒0=编码器没数据</td></tr>
+    <tr><td><code>merged</code></td><td>融合激活</td><td>1=F1且act=1;0=未融合</td></tr>
   </table>
 </div>
 
-<!-- ============ 4. 阶段一 ============ -->
-<h2 id="phase1">4. 第一阶段:纯 V3 状态机调参(F0)</h2>
+<!-- ============ 4. 参数 ============ -->
+<h2 id="params">4. 当前固化参数一览</h2>
 
 <div class="card">
-  <div class="warn"><strong>先发 F0 关前馈!</strong> 把"车体扰动"和"球控制"分开调,一次只解决一个问题。</div>
+  <h4>球控制(V3 状态机)</h4>
+  <table>
+    <tr><th>参数</th><th>值</th><th>说明</th></tr>
+    <tr><td>KP</td><td>0.80</td><td>串口 J 可调(0.2~8.0)</td></tr>
+    <tr><td>KD</td><td>0.50</td><td>串口 M 可调</td></tr>
+    <tr><td>KI</td><td>0.02</td><td>条件积分(误差&lt;1cm 且 速度&lt;1cm/s 才启用)</td></tr>
+    <tr><td>输出限幅</td><td>±6°</td><td>串口 O/U 可调</td></tr>
+    <tr><td>SETTLED 锁定</td><td>±0.5cm</td><td>球进范围 500ms -> 输出归零</td></tr>
+    <tr><td>SETTLED 退出</td><td>±0.8cm</td><td>滞回防抖</td></tr>
+    <tr><td>脱困角度</td><td><strong>+6.0° / -6.0°</strong></td><td>卡住300ms全力冲</td></tr>
+    <tr><td>脱困释放</td><td>位移0.25cm / 速度0.4cm/s / 300ms</td><td>球一动就回ROLLING</td></tr>
+    <tr><td>预测</td><td>0.05s / ±0.5cm</td><td>P项超前补偿</td></tr>
+    <tr><td>制动缩放</td><td>近1cm全开 / 远3cm 35%</td><td>远处弱阻尼,近处强阻尼</td></tr>
+  </table>
 
-  <h3>4.1 前置条件检查</h3>
+  <h4>前馈(加速度补偿)</h4>
+  <table>
+    <tr><th>参数</th><th>值</th><th>说明</th></tr>
+    <tr><td>前馈限幅</td><td><strong>30°</strong></td><td>串口 E 可调(4~30)</td></tr>
+    <tr><td>前进增益 G</td><td>1.0</td><td>串口 G 可调(0~2.0)</td></tr>
+    <tr><td>刹车增益 B</td><td>1.0</td><td>串口 B 可调(0~2.0)</td></tr>
+    <tr><td>加速度过滤</td><td>±3 m/s²</td><td>超过物理上限直接丢弃</td></tr>
+    <tr><td>EMA 滤波</td><td>0.5 权重</td><td>只在新编码器帧时更新</td></tr>
+    <tr><td>断流超时</td><td>500ms</td><td>编码器断流前馈衰减回零</td></tr>
+    <tr><td>待机保护</td><td>act=0 时水平</td><td>未启动不驱动电机</td></tr>
+  </table>
+
+  <h4>机械/回零</h4>
+  <table>
+    <tr><th>参数</th><th>值</th><th>说明</th></tr>
+    <tr><td>PWM_HORIZONTAL_REF</td><td>135.21°</td><td>水平位(实测)</td></tr>
+    <tr><td>PWM_LIMIT_LOW</td><td>97.10°</td><td>负机械极限(实测)</td></tr>
+    <tr><td>PWM_LIMIT_HIGH</td><td>190.0°</td><td>正机械极限</td></tr>
+  </table>
+</div>
+
+<!-- ============ 5. 阶段一 ============ -->
+<h2 id="phase1">5. 第一阶段:调球控制(纯 V3, F0)</h2>
+
+<div class="card">
+  <div class="warn"><strong>先 F0 关前馈!</strong> 把"车体扰动"和"球控制"分开调,一次只解决一个问题。</div>
+
+  <h3>5.1 前置检查</h3>
   <ol>
-    <li>上电 → LED 亮 → 电机回零完成(摆杆水平)</li>
+    <li>上电 -> LED 亮 -> 电机回零完成(摆杆水平)</li>
     <li>视觉摄像头开着(60Hz 发数据)</li>
-    <li><code>S</code> → <code>valid=1</code>(视觉数据进来了)</li>
-    <li><code>F0</code> 回车 → <code>OK FF merge OFF</code></li>
-    <li><code>V</code> 回车 → <code>Vision PID started</code></li>
+    <li><code>S</code> -> <code>valid=1</code>(视觉数据进来了)</li>
+    <li><code>F0</code> -> <code>OK FF merge OFF</code></li>
+    <li><code>V</code> -> <code>Vision PID started</code>(act 变 1)</li>
   </ol>
 
-  <h3>4.2 调 KP(位置增益)</h3>
-  <div class="flow-step">
-    <div class="flow-num">1</div>
-    <div class="flow-body">
-      <div class="title">初始 KP=0.80,球放 +3cm</div>
-      <div class="detail">发 <code>S</code> 观察球回中过程(目标: 3~5秒回到目标附近)</div>
-    </div>
-  </div>
-  <div class="flow-step">
-    <div class="flow-num green">2</div>
-    <div class="flow-body">
-      <div class="title">回得太慢 → 增大 <code>J 1.2</code></div>
-      <div class="detail">每档 +0.2~0.3,重新观察。回中时间应缩短到 2~3 秒</div>
-    </div>
-  </div>
-  <div class="flow-step">
-    <div class="flow-num yellow">3</div>
-    <div class="flow-body">
-      <div class="title">过冲振荡 → 减小 <code>J 0.6</code></div>
-      <div class="detail">球冲过目标来回荡 → 减小 KP(不是增大 KD!)先降 KP 到不过冲</div>
-    </div>
-  </div>
-  <div class="flow-step">
-    <div class="flow-num purple">4</div>
-    <div class="flow-body">
-      <div class="title">目标: 无过冲 + 回中快</div>
-      <div class="detail">KP 定在 0.8~1.2 之间一个"快速且不过冲"的值</div>
-    </div>
+  <h3>5.2 调 KP(位置增益)</h3>
+  <p>球放 +3cm,观察回中过程:</p>
+  <table>
+    <tr><th>现象</th><th>调整</th><th>原因</th></tr>
+    <tr><td>球快速回中,不过冲</td><td>✅ KP 合适</td><td>-</td></tr>
+    <tr><td>球回得太慢</td><td><code>J 1.2</code> ~ <code>J 1.5</code></td><td>KP 太低</td></tr>
+    <tr><td>球冲过目标振荡</td><td><code>J 0.6</code></td><td>KP 太高</td></tr>
+    <tr><td>球卡在远处推不动</td><td>靠脱困机制,不调KP</td><td>脱困6°会冲</td></tr>
+  </table>
+  <div class="note">
+    <strong>关键:</strong> V3 有脱困机制(卡住300ms全力6°),所以"推不动"不再靠高KP解决。
+    KP 保持低(0.8~1.5),让脱困做重活。
   </div>
 
-  <h3>4.3 调 KD(阻尼)</h3>
+  <h3>5.3 调 KD(阻尼)</h3>
   <ol>
     <li>KP 定好后,球在目标附近来回小幅荡</li>
     <li>增大 <code>M 0.6 ~ 0.7</code> 压振荡</li>
-    <li>KD 太大 → 球迟钝、回中慢(这时往回降)</li>
-    <li>注意: V3 的 D 项是距离自适应的(近 1cm 全开,远 3cm 只 35%),这是特性</li>
+    <li>KD 太大 -> 球迟钝、回中慢 -> 往回降</li>
   </ol>
 
-  <h3>4.4 验证脱困(BREAKAWAY)</h3>
-  <div class="note">
-    <strong>脱困是 V3 解决静摩擦的机制:</strong> 球静止在误差≥0.35cm 处持续 300ms → 状态机输出强制 +3.2°(正侧)或 -5.2°(负侧)冲一下 → 球一动(≥0.25cm/s 或位移 0.1cm)立即恢复 ROLLING。
-  </div>
+  <h3>5.4 验证脱困(BREAKAWAY)</h3>
   <ol>
-    <li>把球放在离目标 1cm 处,<strong>等它完全静止</strong></li>
-    <li>静止 300ms 后应看到电机突然冲一下 → 球开始滚 → 回到目标</li>
-    <li><strong>如果脱困推不动</strong>: 改代码 <code>breakaway_positive_deg / negative_deg</code>(见第 6 节),+0.3° 一档</li>
-    <li><strong>如果脱困太猛球飞过</strong>: 减脱困角度或减 <code>breakaway_max_ms</code></li>
+    <li>球放在离目标 2~3cm 处,<strong>等它完全静止</strong></li>
+    <li>静止 300ms 后应看到电机突然冲一下(6°) -> 球开始滚</li>
+    <li>球一动(≥0.4cm/s) -> 立即回 ROLLING -> PID 接管</li>
+    <li><strong>6° 还推不动</strong> -> 检查轨道是否有不平/卡点</li>
   </ol>
 
-  <h3>4.5 验证锁定(SETTLED)</h3>
+  <h3>5.5 验证锁定(SETTLED)</h3>
   <ol>
-    <li>球稳定在目标 ±0.3cm 且速度 &lt;0.6cm/s 持续 500ms → 进入 SETTLED</li>
+    <li>球稳定在目标 ±0.5cm 且速度 &lt;0.6cm/s 持续 500ms</li>
     <li>现象: <code>S</code> 的 out 归零,电机不再动(不抖不耗)</li>
-    <li>球被碰出 0.6cm 或速度超 1.2cm/s → 退出锁定恢复控制</li>
-    <li>如果锁定后球又慢慢溜走 → 轨道不水平 → 调 <code>T</code>(下一节)</li>
+    <li>球被碰出 0.8cm -> 退出锁定恢复控制</li>
   </ol>
 
-  <h3>4.6 调 trim(静态补偿)</h3>
+  <h3>5.6 调 trim(静态补偿)</h3>
   <ol>
-    <li>球稳定在目标后,观察它是否<strong>始终偏向一侧</strong>(轨道微倾/摩擦不对称)</li>
-    <li>球持续偏正侧 → <code>T -0.3</code>(负trim抵消)</li>
-    <li>球持续偏负侧 → <code>T +0.3</code></li>
-    <li>每次 ±0.1~0.3,调到球能停在目标正中央</li>
+    <li>球稳定后观察是否<strong>偏向一侧</strong>(轨道微倾)</li>
+    <li>偏正侧 -> <code>T -0.3</code>;偏负侧 -> <code>T +0.3</code></li>
   </ol>
+
+  <div class="tip"><strong>第一阶段目标:</strong> 球能从任意位置回中,锁定不抖,脱困能推动。</div>
 </div>
 
-<!-- ============ 5. 阶段二 ============ -->
-<h2 id="phase2">5. 第二阶段:前馈融合调参(F1)</h2>
+<!-- ============ 6. 阶段二 ============ -->
+<h2 id="phase2">6. 第二阶段:调前馈(F1, A 命令法)</h2>
 
 <div class="card">
-  <h3>5.1 开启并验证</h3>
-  <ol>
-    <li><code>F1</code> → <code>OK FF merge ON</code></li>
-    <li><code>S</code> → <code>merged=1</code>,静止时 <code>ff≈trim</code>(≈0)</li>
-    <li>推一下车 → <code>ax</code> 变化 → <code>ff</code> 跟随变化 ✓ 前馈在工作</li>
-  </ol>
-
-  <h3>5.2 前馈物理原理</h3>
-  <pre><code>小车加速 a_x 时,球受到"虚拟重力" -a_x(惯性力)
-
-需要的补偿倾角:  θ_ff = atan2(-gain·a_x, g) × 57.3°
-
-  小车加速前进 → 摆杆前倾(抵消球向后滚的惯性)
-  小车刹车     → 摆杆后倾(抵消球向前冲的惯性)
-</code></pre>
-
-  <h3>5.3 调前进增益 <code>G</code></h3>
-  <table>
-    <tr><th>现象</th><th>调整</th></tr>
-    <tr><td>加速时球往后滚(补偿不足)</td><td><code>G 1.2 ~ 1.5</code></td></tr>
-    <tr><td>加速时球往前冲(过度补偿)</td><td><code>G 0.7 ~ 0.8</code></td></tr>
-    <tr><td>加速时球稳定不动</td><td>✅ G 合适</td></tr>
-  </table>
-
-  <h3>5.4 调刹车增益 <code>B</code></h3>
-  <table>
-    <tr><th>现象</th><th>调整</th></tr>
-    <tr><td>刹车时球往前冲(没刹住)</td><td><code>B 1.2 ~ 1.5</code></td></tr>
-    <tr><td>刹车时球往后滚(过补偿)</td><td><code>B 0.7 ~ 0.8</code></td></tr>
-  </table>
-
   <div class="tip">
-    <strong>💡 经验:</strong> 前进和刹车通常不对称(刹车更急),B 往往需要比 G 大。
-    你的机械标定也证明了这点:正侧 3°/cm,负侧 5°/cm。
+    <strong>💡 用 A 命令调前馈,不用启动小车!</strong><br>
+    A 命令注入恒定已知加速度,排除编码器噪声,精确验证 G 和 E 的效果。
   </div>
 
-  <h3>5.5 调速率限制 <code>L</code></h3>
-  <ol>
-    <li>默认 80°/s(电机角度变化最快速度)</li>
-    <li>电机动作太猛/机构冲击 → <code>L 40 ~ 60</code></li>
-    <li>动作太慢跟不上 → <code>L 80</code></li>
-    <li>视觉丢失回水平的速度固定 20°/s(独立,不随 L 变)</li>
-  </ol>
-
-  <h3>5.6 手动测试前馈 <code>A</code></h3>
-  <div class="note">
-    没有车轮编码器数据时,可用 <code>A &lt;值&gt;</code> 手动注入加速度,验证前馈方向和强度:
-    <pre><code>A 1.0   → 模拟 1 m/s² 前进加速度 → S 看 ff 变化
-A -1.0  → 模拟 1 m/s² 刹车 → ff 反向变化
-A 0     → 恢复</code></pre>
-  </div>
-</div>
-
-<!-- ============ 6. V3 内部参数 ============ -->
-<h2 id="v3internal">6. V3 内部参数(改代码)</h2>
-
-<div class="card">
-  <p>这些参数在 <code>Control/native_v3_core.c</code> 的 <code>NativeV3_DefaultConfig()</code> 里,改完需重新编译。</p>
-
-  <h4>🔴 脱困参数(最常调)</h4>
-  <table>
-    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
-    <tr><td><code>breakaway_positive_deg</code></td><td>+3.2°</td><td>球在正侧(误差&gt;0)脱困角度。推不动就 +0.3</td></tr>
-    <tr><td><code>breakaway_negative_deg</code></td><td>-5.2°</td><td>球在负侧(误差&lt;0)脱困角度。负侧更费力,通常要更大</td></tr>
-    <tr><td><code>stiction_error_cm</code></td><td>0.35 cm</td><td>误差超过此值且静止 → 触发脱困</td></tr>
-    <tr><td><code>stiction_confirm_ms</code></td><td>300 ms</td><td>静止多久才确认脱困(太短易误触发)</td></tr>
-    <tr><td><code>breakaway_max_ms</code></td><td>200 ms</td><td>脱困最长时间(超时强制恢复)</td></tr>
-  </table>
-
-  <h4>🟡 锁定参数</h4>
-  <table>
-    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
-    <tr><td><code>settled_position_cm</code></td><td>0.30 cm</td><td>误差 &lt;此值 且 速度 &lt;0.6 → 开始计时锁定</td></tr>
-    <tr><td><code>settled_exit_position_cm</code></td><td>0.60 cm</td><td>误差 &gt;此值 → 退出锁定(滞回防抖)</td></tr>
-    <tr><td><code>settled_confirm_ms</code></td><td>500 ms</td><td>稳定多久进入锁定</td></tr>
-  </table>
-
-  <h4>🟢 预测与制动</h4>
-  <table>
-    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
-    <tr><td><code>prediction_s</code></td><td>0.10 s</td><td>位置预测时间(超前量)</td></tr>
-    <tr><td><code>prediction_limit_cm</code></td><td>1.0 cm</td><td>预测上限(防噪声放大)</td></tr>
-    <tr><td><code>brake_near_cm</code></td><td>1.0 cm</td><td>距目标 &lt;1cm → D项全开(100%)</td></tr>
-    <tr><td><code>brake_far_cm</code></td><td>3.0 cm</td><td>距目标 &gt;3cm → D项 35%</td></tr>
-  </table>
-
-  <h4>🔵 视觉与积分</h4>
-  <table>
-    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
-    <tr><td><code>vision_timeout_ms</code></td><td>200 ms</td><td>视觉超时 → 回水平</td></tr>
-    <tr><td><code>recovery_frames</code></td><td>2</td><td>视觉恢复需连续 2 帧(防抖动)</td></tr>
-    <tr><td><code>minimum_confidence</code></td><td>40</td><td>置信度下限(低于拒帧)</td></tr>
-    <tr><td><code>integral_position_cm</code></td><td>1.0 cm</td><td>误差 &lt;1cm 才允许积分</td></tr>
-    <tr><td><code>integral_velocity_cm_s</code></td><td>1.0 cm/s</td><td>速度 &lt;1cm/s 才允许积分</td></tr>
-  </table>
-</div>
-
-<!-- ============ 7. 完整流程 ============ -->
-<h2 id="workflow">7. 完整调参流程(从零开始)</h2>
-
-<div class="card">
-  <h3>📋 调参记录表模板</h3>
-  <pre><code>日期: ______  场地: ______  光照: ______  轨道: ______
-
-阶段一(F0 纯V3):
-  KP = ______  (起始0.80)     现象: 快/慢/振荡
-  KD = ______  (起始0.50)     现象: 荡/钝
-  脱困角度 = +____ / -____    现象: 推得动/推不动
-  trim = ______               现象: 偏向正/负侧
-  结论: 球能稳定在目标, 不荡, 能脱困 ✓
-
-阶段二(F1 前馈):
-  G (前进) = ______           现象: 加速球向后/前/稳
-  B (刹车) = ______           现象: 刹车球向前/后/稳
-  L (速率) = ______           现象: 动作猛/钝
-  结论: 推车球不乱跑 ✓
-
-最终确认:
-  球 +3cm 放下 → 回中时间 ____s  过冲 ____cm
-  球 -3cm 放下 → 回中时间 ____s  过冲 ____cm
-  静止 1cm 处 → 脱困成功? 是/否
-  推车 0.5m/s 急停 → 球位移 ____cm
-</code></pre>
-
-  <h3>操作序列</h3>
-  <ol>
-    <li>上电 → 等回零 → <code>F0</code> → <code>V</code></li>
-    <li>调 KP → 调 KD → 验证脱困 → 调 trim</li>
-    <li><code>W</code> 停止 → <code>F1</code> → <code>V</code> 重启</li>
-    <li>调 G/B → 验证推车</li>
-    <li>把最终值写回 <code>demo_config.h</code> 或 <code>NativeV3_DefaultConfig</code>,重新编译固化</li>
-  </ol>
+  <h3>6.1 开启并验证方向</h3>
+  <pre><code>F1       ← 开前馈融合
+V        ← 启动(act=1, 前馈才参与)
+A 1      ← 模拟车加速 1 m/s²
+S        ← 观察:
+           ax=1.00  ← 加速度进来了
+           ff=-5.7  ← 前馈角度(负=后倾, 推球向前抵消惯性) ✓
+           球往负方向滚 ← 前馈在作用
+A 0      ← 复位, ff 回 0</code></pre>
 
   <div class="warn">
-    <strong>⚠️ 一次只改一个参数!</strong> 每次改动后记录现象,再改下一个。同时改多个参数会导致不知道是哪个引起的。
+    <strong>方向检查:</strong><br>
+    A 1(正加速) -> ff 应为<strong>负</strong>(摆杆后倾)<br>
+    A -1(刹车) -> ff 应为<strong>正</strong>(摆杆前倾)<br>
+    方向反了 -> 前馈帮倒忙,需查符号(告诉我)
   </div>
+
+  <h3>6.2 调 G(增益 = 斜率)</h3>
+  <p>G 控制"加速度->倾角"的斜率。A 命令注入已知值,看 ff 是否匹配:</p>
+  <table>
+    <tr><th>A 命令</th><th>G=1.0 期望 ff</th><th>G=1.5 期望 ff</th><th>说明</th></tr>
+    <tr><td><code>A 0.5</code></td><td>-2.9°</td><td>-4.3°</td><td>小加速</td></tr>
+    <tr><td><code>A 1.0</code></td><td>-5.7°</td><td>-8.5°</td><td>中加速</td></tr>
+    <tr><td><code>A 2.0</code></td><td>-11.3°</td><td>-16.7°</td><td>大加速</td></tr>
+    <tr><td><code>A 3.0</code></td><td>-16.4°</td><td>-23.8°</td><td>极限(过滤边界)</td></tr>
+  </table>
+  <pre><code>A 1 -> S 看 ff:
+  ff=-5.7  -> G 合适 ✓
+  ff=-3.0  -> G 太小, 调 G 1.5
+  ff=-8.5  -> G 太大, 调 G 0.7
+A 0       ← 复位</code></pre>
+
+  <h3>6.3 调 E(限幅 = 上限)</h3>
+  <p>E 只在 ff 打满时才有用。调大 G 到 ff 打满后,只能调 E:</p>
+  <pre><code>E 30     ← 当前默认(限幅30°)
+A 3      ← 注入大加速度
+S        ← ff 应显示 -30.00(打满)
+E 20     ← 收紧限幅
+S        ← ff 变 -20.00
+A 0      ← 复位</code></pre>
+
+  <h3>6.4 G 和 E 的关系(关键!)</h3>
+  <pre><code>ff = atan2(-G × ax, g) × 57.3°  然后限幅到 ±E
+
+情况1: ff 未打满(|ff| < E)
+  -> 调 G 有效(斜率), 调 E 无效(没到上限)
+
+情况2: ff 打满(|ff| = E)
+  -> 调 G 无效(被钳住), 调 E 有效(抬高上限)
+
+判断方法: S 看 ff
+  ff=-5.7  (未打满) -> 调 G
+  ff=-30.0 (打满)   -> 调 E</code></pre>
+
+  <h3>6.5 调刹车增益 B</h3>
+  <pre><code>A -1     ← 模拟刹车(负加速度)
+S        ← ff 应为正值(前倾)
+B 1.5    ← 刹车增益加大
+A -1
+S        ← ff 应更大
+A 0      ← 复位</code></pre>
+
+  <div class="tip"><strong>第二阶段目标:</strong> A 命令验证前馈方向对、G/E 参数合理,ff 跟随 ax 变化。</div>
+</div>
+
+<!-- ============ 7. 阶段三 ============ -->
+<h2 id="phase3">7. 第三阶段:实战验证(小车启动)</h2>
+
+<div class="card">
+  <p>A 命令调好后,用真实小车验证动态效果:</p>
+
+  <h3>7.1 接入主控编码器</h3>
+  <pre><code>F1 -> V -> 小车启动 -> S 观察:
+  ax= 平滑变化(真实加速度)   ← 应在 0~2 之间
+  ff= 跟随 ax 变化            ← 前馈在工作
+  ball= 球位移                ← 应 ≤2cm
+
+车停下:
+  ax=0 -> ff=0 -> 球回中锁定</code></pre>
+
+  <h3>7.2 诊断:ax 恒 0(数据没来)</h3>
+  <table>
+    <tr><th>检查项</th><th>方法</th></tr>
+    <tr><td>主控连接</td><td>UART1 9600, 串口助手看 0x42 帧</td></tr>
+    <tr><td>编码器数据</td><td>0x42 帧的 left/right 是否变化</td></tr>
+    <tr><td>过滤是否过严</td><td>ax>3 被丢弃(检查真实加速度是否超3)</td></tr>
+    <tr><td>断流超时</td><td>500ms 无帧 -> 前馈衰减回零</td></tr>
+  </table>
+
+  <h3>7.3 诊断:球位移大(补偿不足)</h3>
+  <table>
+    <tr><th>现象</th><th>原因</th><th>解决</th></tr>
+    <tr><td>ax 有值但 ff 打满</td><td>限幅不够</td><td><code>E</code> 调大</td></tr>
+    <tr><td>ff 未打满但球还跑</td><td>增益不够</td><td><code>G</code> 调大</td></tr>
+    <tr><td>ax 跳变大(噪声)</td><td>编码器回绕/噪声</td><td>检查主控端编码器</td></tr>
+    <tr><td>加速时球往后走</td><td>补偿不足</td><td>G 调大 或 E 调大</td></tr>
+    <tr><td>加速时球往前冲</td><td>补偿过头</td><td>G 调小</td></tr>
+  </table>
+
+  <div class="note">
+    <strong>加速度要求:</strong> 给主控的要求是小车加速度 ≤2 m/s² 且渐变(不要突跳)。
+    如果主控加速太猛(>3 m/s²),前馈被过滤丢弃,球会跑。
+  </div>
+
+  <div class="tip"><strong>第三阶段目标:</strong> 小车启动/刹车时球位移 ≤2cm,停车后 2~3 秒回中锁定。</div>
 </div>
 
 <!-- ============ 8. 故障排查 ============ -->
@@ -392,16 +382,17 @@ A 0     → 恢复</code></pre>
   <table>
     <tr><th>现象</th><th>原因</th><th>解决</th></tr>
     <tr><td>上电 LED 不亮</td><td>.o 缓存 / 烧录失败</td><td>CCS Clean + Build,重新烧录</td></tr>
-    <tr><td>回零不动或一直转</td><td>PWM_HORIZONTAL_REF 不对</td><td>重测水平 PWM 值,更新 demo_config.h</td></tr>
-    <tr><td><code>S</code> 显示 valid=0</td><td>视觉没连/没开</td><td>检查 UART2 接线 + MaixCam 启动</td></tr>
-    <tr><td>球推不动(静止)</td><td>脱困角度不够</td><td>改 breakaway_*_deg(+0.3 一档)</td></tr>
+    <tr><td>S 显示 valid=0</td><td>视觉没连/没开</td><td>检查 UART2 接线 + MaixCam 启动</td></tr>
+    <tr><td>S 显示 ax=0 恒定</td><td>主控/编码器没数据</td><td>检查 UART1 9600, 0x42 帧</td></tr>
+    <tr><td>ff 恒 0 但 ax≠0</td><td>固件旧 或 待机(act=0)</td><td>先 V 启动; 仍0则重新烧录</td></tr>
+    <tr><td>球卡住推不动</td><td>脱困角度不够 / 轨道不平</td><td>脱困已6°, 检查轨道</td></tr>
     <tr><td>球来回振荡</td><td>KD 太小 或 KP 太大</td><td>先降 KP,再增 KD</td></tr>
     <tr><td>球稳定但慢慢溜走</td><td>轨道不水平</td><td>调 <code>T</code> trim</td></tr>
-    <tr><td>推车球乱跑</td><td>前馈没开或增益不对</td><td><code>F1</code> + 调 <code>G/B</code></td></tr>
-    <tr><td>视觉丢失后球继续跑</td><td>丢失时角度保持</td><td>V3 已修复:20°/s 回水平(确认代码是新版)</td></tr>
-    <tr><td>命令无响应</td><td>发错串口/波特率</td><td>调参只发 UART0 115200</td></tr>
-    <tr><td>电机高频抖动</td><td>输出限幅太大/速率太快</td><td><code>O/U</code> 降限幅,<code>L</code> 降速率</td></tr>
-    <tr><td>脱困时球飞过</td><td>脱困角度太大</td><td>减 breakaway 角度或减 breakaway_max_ms</td></tr>
+    <tr><td>推车球乱跑</td><td>前馈没开或增益不对</td><td><code>F1</code> + 调 <code>G/E</code></td></tr>
+    <tr><td>未启动时车动球飞</td><td>待机保护(设计行为)</td><td>先 V 启动再跑车</td></tr>
+    <tr><td>电机高频抖动</td><td>输出限幅太大</td><td><code>O/U</code> 降限幅</td></tr>
+    <tr><td>命令无响应</td><td>发错串口/波特率/没回车</td><td>UART0 115200, ASCII+回车</td></tr>
+    <tr><td>G/E 调了没效果</td><td>ff 打满(调G无效) 或 未打满(调E无效)</td><td>S 看 ff 判断该调哪个</td></tr>
   </table>
 </div>
 
@@ -410,15 +401,15 @@ A 0     → 恢复</code></pre>
 
 <div class="card">
   <ol>
-    <li>☐ 摆杆水平时 PWM 值已写入 <code>PWM_HORIZONTAL_REF</code></li>
-    <li>☐ 视觉标定准确(<code>S</code> 的 ball 与实际位置对比)</li>
-    <li>☐ V3 参数已固化(不是依赖串口临时调)</li>
-    <li>☐ 前馈增益 G/B 已固化,推车验证过</li>
-    <li>☐ UART1 9600 与主控通信正常(S 能看到状态帧)</li>
-    <li>☐ 编码器 TYPE 0x42 数据正常(S 的 ax 有值)</li>
-    <li>☐ 脱困测试通过(球静止 1cm 处能自己回来)</li>
-    <li>☐ 灯光环境稳定(视觉检测稳定)</li>
-    <li>☐ 备用电池/供电充足</li>
+    <li>☐ 回零正常(PWM≈135.21°,摆杆水平)</li>
+    <li>☐ 视觉有效(S 显示 valid=1,ball 与实际位置吻合)</li>
+    <li>☐ 球控制稳定(球放 3cm 能回中锁定,不振荡)</li>
+    <li>☐ 脱困有效(球卡 2cm 静止 300ms 后能冲开)</li>
+    <li>☐ 前馈方向正确(A 1 -> ff 负,球往负滚)</li>
+    <li>☐ 前馈参数已固化(G/B/E 写回代码)</li>
+    <li>☐ 主控通信正常(UART1 9600, ax 有值)</li>
+    <li>☐ 推车验证通过(球位移 ≤2cm)</li>
+    <li>☐ 赛题流程联调(select->start->stop)</li>
   </ol>
 </div>
 
