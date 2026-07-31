@@ -180,18 +180,7 @@ static void Demo_PollUart(void)
             uart_puts(" rate="); uart_putf(m->theta_rate_limit,0);
             uart_puts("\r\n");
         }
-        /* A/T/G/B/L/R 命令 + 数字参数, 用行缓冲 (数字/点/负号也进缓冲) */
-        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r') {
-            if (s_line_len < sizeof(s_line) - 1U) {
-                s_line[s_line_len++] = ch;
-            }
-        }
-        else if (s_line_len > 0U) {
-            /* 命令进行中: 数字、小数点、负号全部进缓冲 */
-            if (s_line_len < sizeof(s_line) - 1U) {
-                s_line[s_line_len++] = ch;
-            }
-        }
+        /* 回车优先处理: 触发命令解析 (必须在缓冲分支之前) */
         else if (ch == '\r' || ch == '\n') {
             if (s_line_len > 0U) {
                 char c = s_line[0];
@@ -229,6 +218,18 @@ static void Demo_PollUart(void)
                     uart_puts("ERR no number\r\n");
                 }
                 s_line_len = 0U;
+            }
+        }
+        /* A/T/G/B/L/R 命令开头 */
+        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r') {
+            if (s_line_len < sizeof(s_line) - 1U) {
+                s_line[s_line_len++] = ch;
+            }
+        }
+        /* 命令进行中: 数字、小数点、负号全部进缓冲 */
+        else if (s_line_len > 0U) {
+            if (s_line_len < sizeof(s_line) - 1U) {
+                s_line[s_line_len++] = ch;
             }
         }
 #else
