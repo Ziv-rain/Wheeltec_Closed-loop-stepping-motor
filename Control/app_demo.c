@@ -15,9 +15,10 @@
 #include "proto_rx.h"
 #include "ball_control.h"
 #include "task_ctrl.h"
+#include "mech_balance.h"
 
 static volatile uint32_t s_ms;
-#if (DEMO_SELECT == 4)
+#if (DEMO_SELECT == 4) || (DEMO_SELECT == 7)
 static char s_line[40];
 static uint8_t s_line_len;
 #endif
@@ -155,6 +156,57 @@ static void Demo_PollUart(void)
             s_line_len = 0U;
         }
 #else
+#if (DEMO_SELECT == 7)
+        /* 模式7: 纯力学补偿调参 */
+        if (ch == 'S' || ch == 's') {
+            CL_Snapshot_t snap; float pwm=0; uint8_t ok;
+            CL_GetSnapshot(MOTOR_AXIS_X, &snap);
+            ok = Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm);
+            uart_puts("Tgt="); uart_putf(snap.target_angle_deg, 2);
+            uart_puts(" Act="); uart_putf(snap.current_angle_deg, 2);
+            uart_puts(" PWM="); if(ok) uart_putf(pwm,2); else uart_puts("N/A");
+            uart_puts("\r\n");
+        } else if (ch == 'Z' || ch == 'z') {
+            CL_SetZero(MOTOR_AXIS_X);
+            uart_puts("Zero set\r\n");
+        } else if (ch == 'P' || ch == 'p') {
+            const MechParams_t *m = MechBalance_GetParams();
+            uart_puts("g="); uart_putf(m->gravity,2);
+            uart_puts(" fwd="); uart_putf(m->accel_gain_fwd,2);
+            uart_puts(" brk="); uart_putf(m->accel_gain_brake,2);
+            uart_puts(" trim="); uart_putf(m->theta_trim_deg,2);
+            uart_puts(" min="); uart_putf(m->theta_min_deg,1);
+            uart_puts(" max="); uart_putf(m->theta_max_deg,1);
+            uart_puts(" rate="); uart_putf(m->theta_rate_limit,0);
+            uart_puts("\r\n");
+        }
+        /* A/T/G/B/L/R 命令需要数字, 用行缓冲 */
+        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r') {
+            if (s_line_len < sizeof(s_line) - 1U) {
+                s_line[s_line_len++] = ch;
+            }
+        }
+        else if (ch == '\r' || ch == '\n') {
+            if (s_line_len > 0U) {
+                float v; char c;
+                s_line[s_line_len] = '\0';
+                if (sscanf(s_line, "%c%f", &c, &v) == 2 || sscanf(s_line, " %c%f", &c, &v) == 2) {
+                    if (c>='a'&&c<='z') c -= 32;
+                    switch(c) {
+                    case 'A': MechBalance_SetAccel(v); uart_puts("OK accel="); uart_putf(v,3); break;
+                    case 'T': MechBalance_SetParam(MP_TRIM, v); uart_puts("OK trim="); uart_putf(v,2); break;
+                    case 'G': MechBalance_SetParam(MP_GAIN_FWD, v); uart_puts("OK fwd="); uart_putf(v,2); break;
+                    case 'B': MechBalance_SetParam(MP_GAIN_BRAKE, v); uart_puts("OK brk="); uart_putf(v,2); break;
+                    case 'L': MechBalance_SetParam(MP_MAX_DEG, v); MechBalance_SetParam(MP_MIN_DEG, -v); uart_puts("OK lim="); uart_putf(v,1); break;
+                    case 'R': MechBalance_SetParam(MP_RATE_LIMIT, v); uart_puts("OK rate="); uart_putf(v,0); break;
+                    default: uart_puts("ERR cmd"); break;
+                    }
+                    uart_puts("\r\n");
+                }
+                s_line_len = 0U;
+            }
+        }
+#else
         /* 模式5(平衡球)下调试串口入口 */
         TaskCtrl_FeedByte((uint8_t)ch);
         if (ch == 'X' || ch == 'x') {
@@ -176,6 +228,7 @@ static void Demo_PollUart(void)
             uart_puts("Zero set\r\n");
         }
 #endif
+#endif
     }
 }
 
@@ -190,11 +243,14 @@ void Demo_Init(void)
     s_demo1_state = 0U;
     s_demo2_state = 0U;
     s_demo3_state = 0U;
-#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4) || (DEMO_SELECT == 5)
+#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4) || (DEMO_SELECT == 5) || (DEMO_SELECT == 7)
     CL_Init();
 #endif
 #if (DEMO_SELECT == 5)
     BallControl_Init();
+#endif
+#if (DEMO_SELECT == 7)
+    MechBalance_Init();
 #endif
     uart_puts("\r\n****************************************************\r\n");
     uart_puts("*  MS42CG + D36A Closed-loop Stepper Demo          *\r\n");
@@ -214,6 +270,16 @@ void Demo_Init(void)
 #elif (DEMO_SELECT == 4)
     uart_puts("- Serial command mode\r\n");
     Demo4_PrintHelp();
+#elif (DEMO_SELECT == 7)
+    uart_puts("- Mechanical balance (pure feedforward)\r\n");
+    uart_puts("  A<val>  set accel m/s2\r\n");
+    uart_puts("  T<val>  set trim deg\r\n");
+    uart_puts("  G<val>  set fwd gain\r\n");
+    uart_puts("  B<val>  set brake gain\r\n");
+    uart_puts("  L<val>  set angle limit deg\r\n");
+    uart_puts("  R<val>  set rate limit deg/s\r\n");
+    uart_puts("  P       print params\r\n");
+    uart_puts("  S       print status\r\n");
 #else
     uart_puts("- Ball control mode (UART2 vision + PID)\r\n");
 #endif
@@ -228,7 +294,10 @@ void Demo_Tick5ms(void)
     ProtoRx_Tick(CL_PERIOD_MS);
     TaskCtrl_Tick5ms();
     BallControl_Tick5ms();
-    CL_Process();
+    CL_Process(); CL_Process(); CL_Process(); CL_Process();
+#elif (DEMO_SELECT == 7)
+    MechBalance_Tick5ms();
+    CL_Process(); CL_Process(); CL_Process(); CL_Process();
 #elif (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
     CL_Process();
 #endif

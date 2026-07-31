@@ -15,12 +15,12 @@
  * 1=��������������2=����1/2/0����������ת�����ӱ�������
  * 3=�ջ��Զ�������4=���ڽǶ�ָ��ջ����ơ�
  */
-#define DEMO_SELECT                 5
+#define DEMO_SELECT                 7
 #define MOTOR_MAX_ANGLE_POS         50.0f
 #define MOTOR_MAX_ANGLE_NEG         35.0f
-#define BALL_KP                     8.0f
+#define BALL_KP                     4.0f
 #define BALL_KI                     0.0f
-#define BALL_KD                     2.0f
+#define BALL_KD                     5.0f
 #define PID_INTEGRAL_LIMIT          10.0f
 
 /* PWM 绝对角度机械限位保护 (电机固定区间不跨0°/360°, 实测值) */
@@ -60,8 +60,8 @@
 #define DEMO3_OUTPUT_MODE           0
 #define DEMO3_OUTPUT_MS             20U
 
-#if (DEMO_SELECT < 1) || (DEMO_SELECT > 5)
-#error "DEMO_SELECT must be 1..5"
+#if (DEMO_SELECT < 1) || (DEMO_SELECT > 7)
+#error "DEMO_SELECT must be 1..7"
 #endif
 #define MOTOR_COUNT                 1
 #if (MOTOR_COUNT < 1) || (MOTOR_COUNT > 2)

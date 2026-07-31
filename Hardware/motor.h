@@ -1,10 +1,10 @@
 /**
   ******************************************************************************
   * @file    motor.h
-  * @brief   D36Aµ¥ÖáSTEP/DIR/ENÂö³åÇý¶¯½Ó¿Ú
+  * @brief   D36Aï¿½ï¿½ï¿½ï¿½STEP/DIR/ENï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¿ï¿½
   ******************************************************************************
-  * TIMA1_CCP1´ÓPA24Êä³ö50%Õ¼¿Õ±ÈSTEP£»PA13¿ØÖÆDIR£»PA12¿ØÖÆEN¡£
-  * ¶¨²½ÔËÐÐÓÉ¶¨Ê±Æ÷ÖÜÆÚÖÐ¶Ï¾«È·Í³¼ÆÂö³åÊý£¬Á¬ÐøÔËÐÐÔò¹Ø±Õ¼Æ²½ÖÐ¶Ï¡£
+  * TIMA1_CCP1ï¿½ï¿½PA24ï¿½ï¿½ï¿½50%Õ¼ï¿½Õ±ï¿½STEPï¿½ï¿½PA13ï¿½ï¿½ï¿½ï¿½DIRï¿½ï¿½PA12ï¿½ï¿½ï¿½ï¿½ENï¿½ï¿½
+  * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É¶ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¶Ï¾ï¿½È·Í³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø±Õ¼Æ²ï¿½ï¿½Ð¶Ï¡ï¿½
   ******************************************************************************
   */
 #ifndef MOTOR_H
@@ -13,35 +13,35 @@
 #include <stdint.h>
 #include "ti_msp_dl_config.h"
 
-/* STEP¶¨Ê±Æ÷¹¤×÷ÔÚ1MHz¼ÆÊýÊ±ÖÓ£¬ÆµÂÊÍ¨¹ý×Ô¶¯ÖØ×°Öµ»»Ëã¡£ */
+/* STEPï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½1MHzï¿½ï¿½ï¿½ï¿½Ê±ï¿½Ó£ï¿½Æµï¿½ï¿½Í¨ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½×°Öµï¿½ï¿½ï¿½ã¡£ */
 #define MOTOR_STEP_TIMER         PWM_0_INST
 #define MOTOR_STEP_CC_INDEX      DL_TIMER_CC_1_INDEX
-/* STEP¶¨Ê±Æ÷¹¤×÷ÔÚ1MHz¼ÆÊýÊ±ÖÓ£¬ÆµÂÊÍ¨¹ý×Ô¶¯ÖØ×°Öµ»»Ëã¡£ */
+/* STEPï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½1MHzï¿½ï¿½ï¿½ï¿½Ê±ï¿½Ó£ï¿½Æµï¿½ï¿½Í¨ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½×°Öµï¿½ï¿½ï¿½ã¡£ */
 #define MOTOR_STEP_TIMER_CLK_HZ  1000000U
-/* D36AÏ¸·Ö±ØÐëÓë²¦ÂëÒ»ÖÂ£º16Ï¸·ÖÊ±Ò»È¦ÐèÒª200*16=3200¸öSTEPÂö³å¡£ */
-#define D36A_MICROSTEP           16U
+/* D36AÏ¸ï¿½Ö±ï¿½ï¿½ï¿½ï¿½ë²¦ï¿½ï¿½Ò»ï¿½Â£ï¿½16Ï¸ï¿½ï¿½Ê±Ò»È¦ï¿½ï¿½Òª200*16=3200ï¿½ï¿½STEPï¿½ï¿½ï¿½å¡£ */
+#define D36A_MICROSTEP           32U
 #define MOTOR_STEPS_PER_REV      (200U * D36A_MICROSTEP)
 #define MOTOR_MIN_FREQ_HZ        16U
-#define MOTOR_MAX_FREQ_HZ        5000U
+#define MOTOR_MAX_FREQ_HZ        8000U
 
-/* Êµ¼Ê½ÓÏß£ºSTEP=PA24£¬DIR=PA13£¬EN=PA12£»µ±Ç°¹¤³ÌÊ¹ÓÃ¸ßµçÆ½Ê¹ÄÜ¡£ */
+/* Êµï¿½Ê½ï¿½ï¿½ß£ï¿½STEP=PA24ï¿½ï¿½DIR=PA13ï¿½ï¿½EN=PA12ï¿½ï¿½ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½Ê¹ï¿½Ã¸ßµï¿½Æ½Ê¹ï¿½Ü¡ï¿½ */
 #define MOTOR_DIR_PORT           GPIOA
 #define MOTOR_DIR_PIN            DL_GPIO_PIN_13
 #define MOTOR_EN_PORT            GPIOA
 #define MOTOR_EN_PIN             DL_GPIO_PIN_12
 
-/* Öá±àºÅ¶¨Òå£»±¾Àý³Ì½öÊ¹ÓÃÖá1¡£ */
+/* ï¿½ï¿½ï¿½Å¶ï¿½ï¿½å£»ï¿½ï¿½ï¿½ï¿½ï¿½Ì½ï¿½Ê¹ï¿½ï¿½ï¿½ï¿½1ï¿½ï¿½ */
 typedef enum { MOTOR_AXIS_X = 0 } MotorAxis_t;
 typedef enum { MOTOR_OK = 0, MOTOR_ERROR, MOTOR_BUSY } MotorStatus_t;
 
-/* ³õÊ¼»¯µç»úGPIO¡¢Í£Ö¹STEPÊä³ö²¢Ê¹ÄÜTIMA1ÖÐ¶Ï¡£ */
+/* ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½GPIOï¿½ï¿½Í£Ö¹STEPï¿½ï¿½ï¿½ï¿½ï¿½Ê¹ï¿½ï¿½TIMA1ï¿½Ð¶Ï¡ï¿½ */
 void Motor_Init(void);
 MotorStatus_t Motor_SetDirection(MotorAxis_t axis, uint8_t high_level);
 uint8_t Motor_GetDirection(MotorAxis_t axis);
-/* ¶¨²½ÔËÐÐ£º°´Ö¸¶¨ÆµÂÊÊä³östeps¸öÂö³å£»ÔËÐÐÖÐÔÙ´ÎÆô¶¯»á·µ»ØMOTOR_BUSY¡£ */
+/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð£ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½stepsï¿½ï¿½ï¿½ï¿½ï¿½å£»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ù´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½á·µï¿½ï¿½MOTOR_BUSYï¿½ï¿½ */
 MotorStatus_t Motor_Start(MotorAxis_t axis, uint32_t steps,
                           uint32_t frequency_hz);
-/* Á¬ÐøÔËÐÐ£ºÓÃÓÚÊµÑé2£¬²»Í³¼ÆÊ£ÓàÂö³å£¬Ö±µ½µ÷ÓÃÍ£Ö¹º¯Êý¡£ */
+/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð£ï¿½ï¿½ï¿½ï¿½ï¿½Êµï¿½ï¿½2ï¿½ï¿½ï¿½ï¿½Í³ï¿½ï¿½Ê£ï¿½ï¿½ï¿½ï¿½ï¿½å£¬Ö±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í£Ö¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
 void Motor_StartContinuous(uint32_t frequency_hz, uint8_t high_level);
 void Motor_Stop(MotorAxis_t axis);
 void Motor_StopAll(void);
