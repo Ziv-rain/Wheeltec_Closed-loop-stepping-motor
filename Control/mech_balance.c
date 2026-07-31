@@ -190,6 +190,14 @@ uint8_t MechBalance_SetVisionSetpoint(float cm)
 
 void MechBalance_SetSeqAutoVision(uint8_t en) { s_seq_auto_vis = en; }
 
+uint8_t MechBalance_GetSeqAutoVision(void) { return s_seq_auto_vis; }
+
+uint8_t MechBalance_ToggleSeqAutoVision(void)
+{
+    s_seq_auto_vis = (uint8_t)!s_seq_auto_vis;
+    return s_seq_auto_vis;
+}
+
 void MechBalance_GetVisionStatus(VisionStatus_t *s)
 {
     if (s) {

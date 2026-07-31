@@ -174,7 +174,8 @@ static void Demo_PollUart(void)
             {
                 VisionStatus_t vs;
                 MechBalance_GetVisionStatus(&vs);
-                uart_puts(" | VIS:act="); uart_putu(vs.active);
+                uart_puts(" | VIS:auto="); uart_putu(MechBalance_GetSeqAutoVision());
+                uart_puts(" act="); uart_putu(vs.active);
                 uart_puts(" valid="); uart_putu(vs.valid);
                 uart_puts(" fault="); uart_putu(vs.fault);
                 uart_puts(" sp="); uart_putf(vs.setpoint_cm, 2);
@@ -205,6 +206,9 @@ static void Demo_PollUart(void)
         } else if (ch == 'W' || ch == 'w') {
             MechBalance_StopVision();
             uart_puts("Vision PID stopped\r\n");
+        } else if (ch == 'U' || ch == 'u') {
+            uint8_t en = MechBalance_ToggleSeqAutoVision();
+            uart_puts(en ? "Auto-vision ON\r\n" : "Auto-vision OFF\r\n");
 #endif
         }
         /* 回车优先处理: 触发命令解析 (必须在缓冲分支之前) */
@@ -370,6 +374,7 @@ void Demo_Init(void)
     uart_puts("  K        4-step seq (auto vision after)\r\n");
     uart_puts("  V        start vision PID\r\n");
     uart_puts("  W        stop vision PID\r\n");
+    uart_puts("  U        toggle auto-vision after seq\r\n");
     uart_puts("  N<val>   set vision target cm\r\n");
     uart_puts("  Q<n><v>  set seq angle n=1..4\r\n");
     uart_puts("  E<n><v>  set seq time n=1..4 ms\r\n");

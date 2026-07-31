@@ -53,6 +53,8 @@ void MechBalance_StopVision(void);               /* 停止视觉PID, 回到力�
 uint8_t MechBalance_IsVisionActive(void);
 uint8_t MechBalance_SetVisionSetpoint(float cm); /* 目标限制在安全轨道范围 */
 void MechBalance_SetSeqAutoVision(uint8_t en);   /* 序列结束后自动启动视觉PID */
+uint8_t MechBalance_GetSeqAutoVision(void);      /* 读取自动视觉开关状态 */
+uint8_t MechBalance_ToggleSeqAutoVision(void);   /* 切换自动视觉开关, 返回新状态 */
 void MechBalance_GetVisionStatus(VisionStatus_t *s); /* S命令显示用 */
 void MechBalance_EmergencyStop(void);
 
