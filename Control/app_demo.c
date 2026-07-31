@@ -180,18 +180,41 @@ static void Demo_PollUart(void)
             uart_puts(" rate="); uart_putf(m->theta_rate_limit,0);
             uart_puts("\r\n");
         }
-        /* A/T/G/B/L/R 命令需要数字, 用行缓冲 */
+        /* A/T/G/B/L/R 命令 + 数字参数, 用行缓冲 (数字/点/负号也进缓冲) */
         else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r') {
+            if (s_line_len < sizeof(s_line) - 1U) {
+                s_line[s_line_len++] = ch;
+            }
+        }
+        else if (s_line_len > 0U) {
+            /* 命令进行中: 数字、小数点、负号全部进缓冲 */
             if (s_line_len < sizeof(s_line) - 1U) {
                 s_line[s_line_len++] = ch;
             }
         }
         else if (ch == '\r' || ch == '\n') {
             if (s_line_len > 0U) {
-                float v; char c;
-                s_line[s_line_len] = '\0';
-                if (sscanf(s_line, "%c%f", &c, &v) == 2 || sscanf(s_line, " %c%f", &c, &v) == 2) {
-                    if (c>='a'&&c<='z') c -= 32;
+                char c = s_line[0];
+                float v = 0.0f;
+                uint8_t i = 1, neg = 0, has_digit = 0;
+                /* 手动解析浮点数 (TI libc 的 sscanf %f 不可用) */
+                if (c>='a'&&c<='z') c -= 32;
+                if (i < s_line_len && s_line[i] == '-') { neg = 1; i++; }
+                else if (i < s_line_len && s_line[i] == '+') { i++; }
+                while (i < s_line_len && s_line[i] >= '0' && s_line[i] <= '9') {
+                    v = v * 10.0f + (float)(s_line[i] - '0');
+                    has_digit = 1; i++;
+                }
+                if (i < s_line_len && s_line[i] == '.') {
+                    float frac = 0.1f;
+                    i++;
+                    while (i < s_line_len && s_line[i] >= '0' && s_line[i] <= '9') {
+                        v += (float)(s_line[i] - '0') * frac;
+                        frac *= 0.1f; i++; has_digit = 1;
+                    }
+                }
+                if (neg) v = -v;
+                if (has_digit) {
                     switch(c) {
                     case 'A': MechBalance_SetAccel(v); uart_puts("OK accel="); uart_putf(v,3); break;
                     case 'T': MechBalance_SetParam(MP_TRIM, v); uart_puts("OK trim="); uart_putf(v,2); break;
@@ -202,6 +225,8 @@ static void Demo_PollUart(void)
                     default: uart_puts("ERR cmd"); break;
                     }
                     uart_puts("\r\n");
+                } else {
+                    uart_puts("ERR no number\r\n");
                 }
                 s_line_len = 0U;
             }

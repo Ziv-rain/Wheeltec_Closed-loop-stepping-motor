@@ -30,7 +30,7 @@
 
 /* 上电自动零点标定 (赛前调水平后读 PWM 填入, 比赛现场无需电脑) */
 #define PWM_HORIZONTAL_REF          143.0f   /* 实测: 摆杆水平时 PWM = 143° */
-#define PWM_HORIZONTAL_TOL          5.0f     /* 判断水平的容差 (°), 大点更安全 */
+#define PWM_HORIZONTAL_TOL          1.0f     /* 判断水平的容差 (°) */
 #define HOMING_FREQ_HZ              100U
 #define HOMING_WAIT_TIMEOUT_MS      3000U    /* 等待绝对角度信号的最长时间 */
 #define HOMING_MOVE_TIMEOUT_MS      15000U   /* 连续回零运动的最长时间 */
