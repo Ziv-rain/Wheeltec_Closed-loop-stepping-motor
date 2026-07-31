@@ -266,24 +266,24 @@ void NativeV3_DefaultConfig(NativeV3_Config_t *cfg)
     if (cfg == NULL) return;
 
     /* Values are derived only from this repository's measurements/history. */
-    cfg->kp = 0.80f;
-    cfg->kd = 0.50f;
+    cfg->kp = 5.0f;   /* 实机标定: 机构静摩擦大, 需高增益推动 */
+    cfg->kd = 0.10f;  /* 实机标定: 视觉速度噪声大, 小阻尼够用 */
     cfg->ki = 0.02f;
     cfg->integral_limit = 3.0f;
-    cfg->output_min_deg = -6.0f;
-    cfg->output_max_deg = 6.0f;
+    cfg->output_min_deg = -10.0f;  /* KP=5 行程大, 输出范围放宽 */
+    cfg->output_max_deg = 10.0f;
     cfg->setpoint_limit_cm = 9.0f;
 
     cfg->velocity_old_weight = 0.50f;
-    cfg->prediction_s = 0.10f;
-    cfg->prediction_limit_cm = 1.0f;
+    cfg->prediction_s = 0.05f;      /* 高KP下预测超前要保守, 防过冲 */
+    cfg->prediction_limit_cm = 0.5f; /* 预测限幅减半 */
     cfg->brake_near_cm = 1.0f;
     cfg->brake_far_cm = 3.0f;
     cfg->brake_far_scale = 0.35f;
 
     cfg->position_deadband_cm = 0.20f;
-    cfg->settled_position_cm = 0.30f;
-    cfg->settled_exit_position_cm = 0.60f;
+    cfg->settled_position_cm = 0.50f;   /* 锁定范围放宽: 0.5cm内即锁定, 避免脱困爬行 */
+    cfg->settled_exit_position_cm = 0.80f;  /* 滞回出口也放宽 */
     cfg->settled_velocity_cm_s = 0.60f;
     cfg->settled_exit_velocity_cm_s = 1.20f;
     cfg->settled_confirm_ms = 500U;
@@ -293,12 +293,12 @@ void NativeV3_DefaultConfig(NativeV3_Config_t *cfg)
 
     cfg->stiction_error_cm = 0.35f;
     cfg->stiction_velocity_cm_s = 0.30f;
-    cfg->moving_velocity_cm_s = 0.25f;
+    cfg->moving_velocity_cm_s = 0.40f;   /* 释放速度提高: 球需真正滚起来才释放 */
     cfg->stiction_confirm_ms = 300U;
-    cfg->breakaway_positive_deg = 3.20f;
-    cfg->breakaway_negative_deg = -5.20f;
-    cfg->breakaway_release_cm = 0.10f;
-    cfg->breakaway_max_ms = 200U;
+    cfg->breakaway_positive_deg = 3.50f;
+    cfg->breakaway_negative_deg = -5.50f;
+    cfg->breakaway_release_cm = 0.25f;   /* 释放位移提高: 推出静摩擦区才释放 */
+    cfg->breakaway_max_ms = 300U;        /* 脱困时间延长: 更多时间推球 */
 
     cfg->vision_timeout_ms = 200U;
     cfg->recovery_frames = 2U;
@@ -395,7 +395,7 @@ void NativeV3_SetGains(NativeV3_Controller_t *controller, float kp,
                        float ki, float kd)
 {
     if (controller == NULL) return;
-    if (finitef(kp) && kp >= 0.20f && kp <= 3.0f) controller->cfg.kp = kp;
+    if (finitef(kp) && kp >= 0.20f && kp <= 8.0f) controller->cfg.kp = kp;
     if (finitef(kd) && kd >= 0.0f && kd <= 1.0f) controller->cfg.kd = kd;
     if (finitef(ki) && ki >= 0.0f && ki <= 0.08f) controller->cfg.ki = ki;
     controller->integral = 0.0f;
