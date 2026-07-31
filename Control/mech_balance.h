@@ -24,6 +24,13 @@ void MechBalance_SetDirectAngle(float deg);    /* 手动倾角模式: 直接设�
 void MechBalance_ExitDirect(void);             /* 退出手动模式, 回到力学补偿 */
 uint8_t MechBalance_IsDirect(void);            /* 是否处于手动模式 */
 
+/* 角度序列: 4步 (滚向D' → 减速 → 反向刹车 → 回水平), 每步角度/时长可调 */
+void MechBalance_SetSeqAngle(uint8_t idx, float deg);   /* idx=0..3 */
+void MechBalance_SetSeqTime(uint8_t idx, uint32_t ms);  /* idx=0..3 */
+void MechBalance_StartSeq(void);
+void MechBalance_StopSeq(void);
+uint8_t MechBalance_IsSeqActive(void);
+
 /* 调参ID */
 #define MP_GRAVITY      0
 #define MP_GAIN_FWD     1

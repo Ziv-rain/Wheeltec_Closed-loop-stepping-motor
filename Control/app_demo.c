@@ -185,9 +185,22 @@ static void Demo_PollUart(void)
             if (s_line_len > 0U) {
                 char c = s_line[0];
                 float v = 0.0f;
-                uint8_t i = 1, neg = 0, has_digit = 0;
+                uint8_t i, neg = 0, has_digit = 0, idx = 0;
                 /* 手动解析浮点数 (TI libc 的 sscanf %f 不可用) */
                 if (c>='a'&&c<='z') c -= 32;
+                /* K: 单字符命令, 执行角度序列 */
+                if (c == 'K' && s_line_len == 1U) {
+                    MechBalance_StartSeq();
+                    uart_puts("OK seq start\r\n");
+                    s_line_len = 0U;
+                    continue;
+                }
+                /* Q/E: 数字从 s_line[2] 开始, s_line[1] 是步索引 1-4 */
+                i = (c=='Q'||c=='E') ? 2U : 1U;
+                if (c=='Q'||c=='E') {
+                    if (s_line[1] >= '1' && s_line[1] <= '4') idx = (uint8_t)(s_line[1]-'1');
+                    else { uart_puts("ERR idx\r\n"); s_line_len = 0U; continue; }
+                }
                 if (i < s_line_len && s_line[i] == '-') { neg = 1; i++; }
                 else if (i < s_line_len && s_line[i] == '+') { i++; }
                 while (i < s_line_len && s_line[i] >= '0' && s_line[i] <= '9') {
@@ -212,6 +225,8 @@ static void Demo_PollUart(void)
                     case 'B': MechBalance_SetParam(MP_GAIN_BRAKE, v); uart_puts("OK brk="); uart_putf(v,2); break;
                     case 'L': MechBalance_SetParam(MP_MAX_DEG, v); MechBalance_SetParam(MP_MIN_DEG, -v); uart_puts("OK lim="); uart_putf(v,1); break;
                     case 'R': MechBalance_SetParam(MP_RATE_LIMIT, v); uart_puts("OK rate="); uart_putf(v,0); break;
+                    case 'Q': MechBalance_SetSeqAngle(idx, v); uart_puts("OK seqA"); uart_putu((uint32_t)(idx+1)); uart_puts("="); uart_putf(v,2); break;
+                    case 'E': MechBalance_SetSeqTime(idx, (uint32_t)v); uart_puts("OK seqT"); uart_putu((uint32_t)(idx+1)); uart_puts("="); uart_putu((uint32_t)v); break;
                     default: uart_puts("ERR cmd"); break;
                     }
                     uart_puts("\r\n");
@@ -221,8 +236,8 @@ static void Demo_PollUart(void)
                 s_line_len = 0U;
             }
         }
-        /* A/T/G/B/L/R/D 命令开头 */
-        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d') {
+        /* A/T/G/B/L/R/D/Q/E/K 命令开头 */
+        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='Q'||ch=='q'||ch=='E'||ch=='e'||ch=='K'||ch=='k') {
             if (s_line_len < sizeof(s_line) - 1U) {
                 s_line[s_line_len++] = ch;
             }

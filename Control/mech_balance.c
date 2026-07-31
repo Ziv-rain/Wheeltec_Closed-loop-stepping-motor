@@ -31,6 +31,13 @@ static float s_theta_cmd = 0.0f;  /* 当前机构命令角 */
 static uint8_t s_direct_mode = 0; /* 手动倾角模式 */
 static float s_direct_deg = 0.0f; /* 手动倾角值 */
 
+/* 角度序列状态 */
+static uint8_t s_seq_active = 0;
+static uint8_t s_seq_step = 0;
+static uint32_t s_seq_elapsed = 0;
+static float s_seq_angles[4] = { -2.0f, -0.5f, 1.5f, 0.0f }; /* 默认: 滚向D'→减速→刹车→水平 */
+static uint32_t s_seq_times[4] = { 2000U, 1000U, 1000U, 3000U }; /* 默认时长 ms */
+
 static float clampf(float v, float lo, float hi) { return v<lo?lo:(v>hi?hi:v); }
 
 void MechBalance_Init(void)
@@ -49,8 +56,29 @@ void MechBalance_SetDirectAngle(float deg)
     s_direct_deg = deg;
 }
 
-void MechBalance_ExitDirect(void) { s_direct_mode = 0; }
+void MechBalance_ExitDirect(void) { s_direct_mode = 0; s_seq_active = 0; }
 uint8_t MechBalance_IsDirect(void) { return s_direct_mode; }
+
+void MechBalance_SetSeqAngle(uint8_t idx, float deg)
+{
+    if (idx < 4U) s_seq_angles[idx] = deg;
+}
+
+void MechBalance_SetSeqTime(uint8_t idx, uint32_t ms)
+{
+    if (idx < 4U) s_seq_times[idx] = ms;
+}
+
+void MechBalance_StartSeq(void)
+{
+    s_seq_active = 1;
+    s_seq_step = 0;
+    s_seq_elapsed = 0;
+    s_direct_mode = 1;
+}
+
+void MechBalance_StopSeq(void) { s_seq_active = 0; }
+uint8_t MechBalance_IsSeqActive(void) { return s_seq_active; }
 
 void MechBalance_SetAccel(float ax_mps2)
 {
@@ -77,6 +105,23 @@ const MechParams_t *MechBalance_GetParams(void) { return &mp; }
 void MechBalance_Tick5ms(void)
 {
     float gain, a_ff, phi_rad, theta_target, max_change;
+
+    /* 0. 角度序列: 4步依次执行, 每步时长后切换下一步 */
+    if (s_seq_active) {
+        s_seq_elapsed += 5U;
+        if (s_seq_elapsed >= s_seq_times[s_seq_step]) {
+            s_seq_elapsed = 0U;
+            if (s_seq_step < 3U) s_seq_step++;
+            else { s_seq_active = 0; s_seq_step = 0; }  /* 序列结束, 回水平 */
+        }
+        s_direct_deg = s_seq_angles[s_seq_step];
+        theta_target = clampf(s_direct_deg, mp.theta_min_deg, mp.theta_max_deg);
+        max_change = mp.theta_rate_limit * 0.005f;
+        s_theta_cmd = clampf(theta_target, s_theta_prev - max_change, s_theta_prev + max_change);
+        s_theta_prev = s_theta_cmd;
+        (void)CL_SetTargetAngle(MOTOR_AXIS_X, s_theta_cmd);
+        return;
+    }
 
     /* 0. 手动倾角模式: 直接输出, 球沿坡滚动 */
     if (s_direct_mode) {
