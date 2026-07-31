@@ -18,7 +18,7 @@
 #include "mech_balance.h"
 
 static volatile uint32_t s_ms;
-#if (DEMO_SELECT == 4) || (DEMO_SELECT == 7)
+#if (DEMO_SELECT == 4) || (DEMO_SELECT == 7) || (DEMO_SELECT == 8)
 static char s_line[40];
 static uint8_t s_line_len;
 #endif
@@ -156,8 +156,8 @@ static void Demo_PollUart(void)
             s_line_len = 0U;
         }
 #else
-#if (DEMO_SELECT == 7)
-        /* 模式7: 纯力学补偿调参 */
+#if (DEMO_SELECT == 7) || (DEMO_SELECT == 8)
+        /* 模式7/8: 力学补偿调参 + 视觉PID */
         if (ch == 'S' || ch == 's') {
             CL_Snapshot_t snap; float pwm=0; uint8_t ok;
             CL_GetSnapshot(MOTOR_AXIS_X, &snap);
@@ -165,6 +165,16 @@ static void Demo_PollUart(void)
             uart_puts("Tgt="); uart_putf(snap.target_angle_deg, 2);
             uart_puts(" Act="); uart_putf(snap.current_angle_deg, 2);
             uart_puts(" PWM="); if(ok) uart_putf(pwm,2); else uart_puts("N/A");
+#if (DEMO_SELECT == 8)
+            {
+                VisionStatus_t vs;
+                MechBalance_GetVisionStatus(&vs);
+                uart_puts(" | VIS:act="); uart_putu(vs.active);
+                uart_puts(" sp="); uart_putf(vs.setpoint_cm, 2);
+                uart_puts(" ball="); uart_putf(vs.ball_pos_cm, 2);
+                uart_puts(" out="); uart_putf(vs.pid_out_deg, 2);
+            }
+#endif
             uart_puts("\r\n");
         } else if (ch == 'Z' || ch == 'z') {
             CL_SetZero(MOTOR_AXIS_X);
@@ -177,6 +187,14 @@ static void Demo_PollUart(void)
             uart_puts(" trim="); uart_putf(m->theta_trim_deg,2);
             uart_puts(" rate="); uart_putf(m->theta_rate_limit,0);
             uart_puts("\r\n");
+#if (DEMO_SELECT == 8)
+        } else if (ch == 'V' || ch == 'v') {
+            MechBalance_StartVision();
+            uart_puts("Vision PID started\r\n");
+        } else if (ch == 'W' || ch == 'w') {
+            MechBalance_StopVision();
+            uart_puts("Vision PID stopped\r\n");
+#endif
         }
         /* 回车优先处理: 触发命令解析 (必须在缓冲分支之前) */
         else if (ch == '\r' || ch == '\n') {
@@ -226,6 +244,7 @@ static void Demo_PollUart(void)
                     case 'R': MechBalance_SetParam(MP_RATE_LIMIT, v); uart_puts("OK rate="); uart_putf(v,0); break;
                     case 'Q': MechBalance_SetSeqAngle(idx, v); uart_puts("OK seqA"); uart_putu((uint32_t)(idx+1)); uart_puts("="); uart_putf(v,2); break;
                     case 'E': MechBalance_SetSeqTime(idx, (uint32_t)v); uart_puts("OK seqT"); uart_putu((uint32_t)(idx+1)); uart_puts("="); uart_putu((uint32_t)v); break;
+                    case 'N': MechBalance_SetVisionSetpoint(v); uart_puts("OK vis_sp="); uart_putf(v,2); break;
                     default: uart_puts("ERR cmd"); break;
                     }
                     uart_puts("\r\n");
@@ -235,8 +254,8 @@ static void Demo_PollUart(void)
                 s_line_len = 0U;
             }
         }
-        /* A/T/G/B/L/R/D/Q/E/K 命令开头 */
-        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='Q'||ch=='q'||ch=='E'||ch=='e'||ch=='K'||ch=='k') {
+        /* A/T/G/B/L/R/D/Q/E/K/N 命令开头 */
+        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='Q'||ch=='q'||ch=='E'||ch=='e'||ch=='K'||ch=='k'||ch=='N'||ch=='n') {
             if (s_line_len < sizeof(s_line) - 1U) {
                 s_line[s_line_len++] = ch;
             }
@@ -284,15 +303,18 @@ void Demo_Init(void)
     s_demo1_state = 0U;
     s_demo2_state = 0U;
     s_demo3_state = 0U;
-#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4) || (DEMO_SELECT == 5) || (DEMO_SELECT == 7)
+#if (DEMO_SELECT == 3) || (DEMO_SELECT == 4) || (DEMO_SELECT == 5) || (DEMO_SELECT == 7) || (DEMO_SELECT == 8)
     CL_Init();
 #endif
 #if (DEMO_SELECT == 5)
     BallControl_Init();
 #endif
-#if (DEMO_SELECT == 7)
+#if (DEMO_SELECT == 7) || (DEMO_SELECT == 8)
     MechBalance_Init();
     BallControl_Init();  /* 复用自动回零状态机 */
+#endif
+#if (DEMO_SELECT == 8)
+    MechBalance_SetSeqAutoVision(1); /* 序列结束后自动启动视觉PID */
 #endif
     uart_puts("\r\n****************************************************\r\n");
     uart_puts("*  MS42CG + D36A Closed-loop Stepper Demo          *\r\n");
@@ -322,6 +344,18 @@ void Demo_Init(void)
     uart_puts("  R<val>  set rate limit deg/s\r\n");
     uart_puts("  P       print params\r\n");
     uart_puts("  S       print status\r\n");
+#elif (DEMO_SELECT == 8)
+    uart_puts("- Mechanical balance + vision PID\r\n");
+    uart_puts("  K        4-step seq (auto vision after)\r\n");
+    uart_puts("  V        start vision PID\r\n");
+    uart_puts("  W        stop vision PID\r\n");
+    uart_puts("  N<val>   set vision target cm\r\n");
+    uart_puts("  Q<n><v>  set seq angle n=1..4\r\n");
+    uart_puts("  E<n><v>  set seq time n=1..4 ms\r\n");
+    uart_puts("  A/T/G/B/R/D  mech params (same as DEMO7)\r\n");
+    uart_puts("  S        status (ball/vision)\r\n");
+    uart_puts("  P        print params\r\n");
+    uart_puts("  Z        zero\r\n");
 #else
     uart_puts("- Ball control mode (UART2 vision + PID)\r\n");
 #endif
@@ -339,6 +373,11 @@ void Demo_Tick5ms(void)
     CL_Process(); CL_Process(); CL_Process(); CL_Process();
 #elif (DEMO_SELECT == 7)
     BallControl_Tick5ms();  /* 上电自动回零; 回零完成后因无RUNNING状态不会启动PID */
+    MechBalance_Tick5ms();
+    CL_Process(); CL_Process(); CL_Process(); CL_Process();
+#elif (DEMO_SELECT == 8)
+    ProtoRx_Tick(CL_PERIOD_MS);  /* 关键: 更新视觉数据age, 否则超时保护失效 */
+    BallControl_Tick5ms();       /* 仅回零: TaskCtrl不跑, PID永不启动 */
     MechBalance_Tick5ms();
     CL_Process(); CL_Process(); CL_Process(); CL_Process();
 #elif (DEMO_SELECT == 3) || (DEMO_SELECT == 4)

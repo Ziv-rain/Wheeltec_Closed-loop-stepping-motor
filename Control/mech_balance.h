@@ -38,4 +38,19 @@ uint8_t MechBalance_IsSeqActive(void);
 #define MP_RATE_LIMIT   5
 #define MP_PITCH        6
 
+/* ---- 视觉PID精调模式 ---- */
+typedef struct {
+    uint8_t active;        /* 视觉PID是否运行 */
+    float   ball_pos_cm;   /* 最近一次有效球位置(cm) */
+    float   setpoint_cm;   /* 目标位置(cm) */
+    float   pid_out_deg;   /* 最近一次PID输出(°) */
+} VisionStatus_t;
+
+void MechBalance_StartVision(void);              /* 手动启动视觉PID (V命令) */
+void MechBalance_StopVision(void);               /* 停止视觉PID, 回到力学模式 (W命令) */
+uint8_t MechBalance_IsVisionActive(void);
+void MechBalance_SetVisionSetpoint(float cm);    /* 设置目标位置 (N命令), 运行中即时生效 */
+void MechBalance_SetSeqAutoVision(uint8_t en);   /* 序列结束后自动启动视觉PID */
+void MechBalance_GetVisionStatus(VisionStatus_t *s); /* S命令显示用 */
+
 #endif
