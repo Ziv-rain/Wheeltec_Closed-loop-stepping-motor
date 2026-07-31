@@ -9,8 +9,6 @@ typedef struct {
     float accel_gain_brake;     /* 制动增益 */
     float accel_bias;           /* 加速度零偏 m/s² */
     float theta_trim_deg;       /* 静态水平微调 ° */
-    float theta_min_deg;        /* 摆杆角下限 ° */
-    float theta_max_deg;        /* 摆杆角上限 ° */
     float theta_rate_limit;     /* 角度变化率限制 °/s */
     float pitch_deg;            /* 车体俯仰角 ° (无IMU则0) */
 } MechParams_t;
@@ -37,9 +35,7 @@ uint8_t MechBalance_IsSeqActive(void);
 #define MP_GAIN_BRAKE   2
 #define MP_ACCEL_BIAS   3
 #define MP_TRIM         4
-#define MP_MIN_DEG      5
-#define MP_MAX_DEG      6
-#define MP_RATE_LIMIT   7
-#define MP_PITCH        8
+#define MP_RATE_LIMIT   5
+#define MP_PITCH        6
 
 #endif

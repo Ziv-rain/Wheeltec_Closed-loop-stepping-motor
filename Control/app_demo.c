@@ -175,8 +175,6 @@ static void Demo_PollUart(void)
             uart_puts(" fwd="); uart_putf(m->accel_gain_fwd,2);
             uart_puts(" brk="); uart_putf(m->accel_gain_brake,2);
             uart_puts(" trim="); uart_putf(m->theta_trim_deg,2);
-            uart_puts(" min="); uart_putf(m->theta_min_deg,1);
-            uart_puts(" max="); uart_putf(m->theta_max_deg,1);
             uart_puts(" rate="); uart_putf(m->theta_rate_limit,0);
             uart_puts("\r\n");
         }
@@ -223,7 +221,7 @@ static void Demo_PollUart(void)
                     case 'T': MechBalance_SetParam(MP_TRIM, v); uart_puts("OK trim="); uart_putf(v,2); break;
                     case 'G': MechBalance_SetParam(MP_GAIN_FWD, v); uart_puts("OK fwd="); uart_putf(v,2); break;
                     case 'B': MechBalance_SetParam(MP_GAIN_BRAKE, v); uart_puts("OK brk="); uart_putf(v,2); break;
-                    case 'L': MechBalance_SetParam(MP_MAX_DEG, v); MechBalance_SetParam(MP_MIN_DEG, -v); uart_puts("OK lim="); uart_putf(v,1); break;
+                    case 'L': MechBalance_SetParam(MP_RATE_LIMIT, v); uart_puts("OK rate="); uart_putf(v,0); break;
                     case 'R': MechBalance_SetParam(MP_RATE_LIMIT, v); uart_puts("OK rate="); uart_putf(v,0); break;
                     case 'Q': MechBalance_SetSeqAngle(idx, v); uart_puts("OK seqA"); uart_putu((uint32_t)(idx+1)); uart_puts("="); uart_putf(v,2); break;
                     case 'E': MechBalance_SetSeqTime(idx, (uint32_t)v); uart_puts("OK seqT"); uart_putu((uint32_t)(idx+1)); uart_puts("="); uart_putu((uint32_t)v); break;

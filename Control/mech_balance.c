@@ -18,8 +18,6 @@ static MechParams_t mp = {
     .accel_gain_brake = 1.0f,
     .accel_bias    = 0.0f,
     .theta_trim_deg = 0.0f,
-    .theta_min_deg  = -3.0f,
-    .theta_max_deg  =  3.0f,
     .theta_rate_limit = 80.0f,
     .pitch_deg = 0.0f,
 };
@@ -93,8 +91,6 @@ void MechBalance_SetParam(uint8_t id, float v)
     case MP_GAIN_BRAKE:  mp.accel_gain_brake = v; break;
     case MP_ACCEL_BIAS:  mp.accel_bias = v;       break;
     case MP_TRIM:        mp.theta_trim_deg = v;   break;
-    case MP_MIN_DEG:     mp.theta_min_deg = v;    break;
-    case MP_MAX_DEG:     mp.theta_max_deg = v;    break;
     case MP_RATE_LIMIT:  mp.theta_rate_limit = v; break;
     case MP_PITCH:       mp.pitch_deg = v;        break;
     }
@@ -115,7 +111,7 @@ void MechBalance_Tick5ms(void)
             else { s_seq_active = 0; s_seq_step = 0; }  /* 序列结束, 回水平 */
         }
         s_direct_deg = s_seq_angles[s_seq_step];
-        theta_target = clampf(s_direct_deg, mp.theta_min_deg, mp.theta_max_deg);
+        theta_target = s_direct_deg;
         max_change = mp.theta_rate_limit * 0.005f;
         s_theta_cmd = clampf(theta_target, s_theta_prev - max_change, s_theta_prev + max_change);
         s_theta_prev = s_theta_cmd;
@@ -126,7 +122,7 @@ void MechBalance_Tick5ms(void)
     /* 0. 手动倾角模式: 直接输出, 球沿坡滚动 */
     if (s_direct_mode) {
         theta_target = s_direct_deg;
-        theta_target = clampf(theta_target, mp.theta_min_deg, mp.theta_max_deg);
+        theta_target = theta_target;
         max_change = mp.theta_rate_limit * 0.005f;
         s_theta_cmd = clampf(theta_target, s_theta_prev - max_change, s_theta_prev + max_change);
         s_theta_prev = s_theta_cmd;
@@ -146,7 +142,7 @@ void MechBalance_Tick5ms(void)
     theta_target = s_phi_deg - mp.pitch_deg + mp.theta_trim_deg;
 
     /* 4. 角度限幅 */
-    theta_target = clampf(theta_target, mp.theta_min_deg, mp.theta_max_deg);
+    theta_target = theta_target;
 
     /* 5. 斜坡限制 (角度变化率) */
     max_change = mp.theta_rate_limit * 0.005f;  /* dt=5ms */
