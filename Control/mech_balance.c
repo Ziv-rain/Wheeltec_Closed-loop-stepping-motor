@@ -349,6 +349,10 @@ void MechBalance_Tick5ms(void)
     if (s_direct_mode) {
         target = s_direct_deg;
         rate = s_params.theta_rate_limit;
+    } else if (!status.requested) {
+        /* 待机(未启动): 保持水平, 前馈不参与, 防球被甩 */
+        target = s_params.theta_trim_deg;
+        rate = s_params.theta_rate_limit;
     } else if (s_ff_merge_enabled) {
         /* 融合: 前馈基座 + 状态机修正 */
         target = s_ff_angle_deg + correction;
