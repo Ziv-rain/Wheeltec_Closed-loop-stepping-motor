@@ -1,0 +1,7 @@
+id: steel_ball_detect_v2
+name: 钢球检测延迟补偿V2
+version: 2.0.0
+description: 20Hz钢球位置、帧序号与推理耗时输出，供收敛控制V2使用
+author: H题参赛队
+main: detect_ai_v2.py
+autorun: false
