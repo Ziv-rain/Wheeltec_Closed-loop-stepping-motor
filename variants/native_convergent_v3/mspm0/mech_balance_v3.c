@@ -1,0 +1,309 @@
+/**
+ * Native Ball-and-Beam V3 runtime adapter.
+ *
+ * It implements the existing mech_balance.h API so the current app_demo.c,
+ * AA55 vision packet, ProtoRx, encoder, D36A and CL_* motor code stay intact.
+ * In a dedicated CCS build configuration, compile this file instead of
+ * Control/mech_balance.c and also compile native_v3_core.c.
+ */
+#include "mech_balance_v3.h"
+
+#include "closed_loop.h"
+#include "demo_config.h"
+#include "encoder.h"
+#include "proto_rx.h"
+
+#include <math.h>
+
+#define V3_MECH_ANGLE_MIN_DEG (-30.0f)
+#define V3_MECH_ANGLE_MAX_DEG 45.0f
+#define V3_NORMAL_RATE_MAX_DEG_S 80.0f
+#define V3_LOST_RATE_DEG_S 20.0f
+
+static MechParams_t s_params = {
+    .gravity = 9.80665f,
+    .accel_gain_fwd = 1.0f,
+    .accel_gain_brake = 1.0f,
+    .accel_bias = 0.0f,
+    .theta_trim_deg = 0.0f,
+    .theta_rate_limit = 80.0f,
+    .pitch_deg = 0.0f,
+};
+
+static NativeV3_Controller_t s_controller;
+static float s_accel_mps2;
+static float s_theta_previous;
+static float s_theta_command;
+static float s_direct_deg;
+static uint32_t s_last_frame_id;
+static uint8_t s_direct_mode;
+static uint8_t s_emergency_stop;
+
+static float clampf(float value, float minimum, float maximum)
+{
+    if (value < minimum) return minimum;
+    if (value > maximum) return maximum;
+    return value;
+}
+
+static uint8_t finitef(float value)
+{
+    return (value == value && value <= 3.4028234e38f &&
+            value >= -3.4028234e38f) ? 1U : 0U;
+}
+
+static float slew_to(float target, float rate_deg_s)
+{
+    float maximum_change;
+
+    target = clampf(target, V3_MECH_ANGLE_MIN_DEG, V3_MECH_ANGLE_MAX_DEG);
+    rate_deg_s = clampf(rate_deg_s, 1.0f, V3_NORMAL_RATE_MAX_DEG_S);
+    maximum_change = rate_deg_s * 0.005f;
+    s_theta_command = clampf(target,
+                             s_theta_previous - maximum_change,
+                             s_theta_previous + maximum_change);
+    s_theta_previous = s_theta_command;
+    return s_theta_command;
+}
+
+static float acceleration_base_angle(void)
+{
+    float gain, acceleration_ff, phi_rad;
+
+    gain = s_accel_mps2 >= 0.0f ? s_params.accel_gain_fwd :
+                                  s_params.accel_gain_brake;
+    acceleration_ff = gain * s_accel_mps2 + s_params.accel_bias;
+    phi_rad = atan2f(-acceleration_ff, s_params.gravity);
+    return phi_rad * 57.29578f - s_params.pitch_deg +
+           s_params.theta_trim_deg;
+}
+
+static void latch_emergency(void)
+{
+    if (s_emergency_stop) return;
+    s_emergency_stop = 1U;
+    s_direct_mode = 0U;
+    NativeV3_EmergencyStop(&s_controller);
+    CL_Stop(MOTOR_AXIS_X);
+}
+
+void MechBalance_Init(void)
+{
+    NativeV3_Config_t config;
+
+    NativeV3_DefaultConfig(&config);
+    NativeV3_Init(&s_controller, &config);
+    (void)NativeV3_SetSetpoint(&s_controller, VIS_SETPOINT_CM, 1U);
+
+    s_accel_mps2 = 0.0f;
+    s_theta_previous = 0.0f;
+    s_theta_command = 0.0f;
+    s_direct_deg = 0.0f;
+    s_last_frame_id = 0U;
+    s_direct_mode = 0U;
+    s_emergency_stop = 0U;
+}
+
+void MechBalance_SetDirectAngle(float deg)
+{
+    if (s_emergency_stop || !finitef(deg) ||
+        deg < V3_MECH_ANGLE_MIN_DEG || deg > V3_MECH_ANGLE_MAX_DEG) return;
+    NativeV3_Pause(&s_controller);
+    s_direct_mode = 1U;
+    s_direct_deg = deg;
+}
+
+void MechBalance_ExitDirect(void)
+{
+    s_direct_mode = 0U;
+    NativeV3_Pause(&s_controller);
+}
+
+uint8_t MechBalance_IsDirect(void) { return s_direct_mode; }
+
+void MechBalance_SetAccel(float ax_mps2)
+{
+    if (finitef(ax_mps2)) s_accel_mps2 = clampf(ax_mps2, -30.0f, 30.0f);
+}
+
+uint8_t MechBalance_StartVision(void)
+{
+    if (s_emergency_stop) return 0U;
+    s_direct_mode = 0U;
+    s_last_frame_id = 0U;
+    NativeV3_Start(&s_controller);
+    return 1U;
+}
+
+void MechBalance_StopVision(void)
+{
+    NativeV3_Pause(&s_controller);
+}
+
+uint8_t MechBalance_IsVisionActive(void)
+{
+    NativeV3_Status_t status;
+    NativeV3_GetStatus(&s_controller, &status);
+    return status.requested;
+}
+
+uint8_t MechBalance_SetVisionSetpoint(float cm)
+{
+    return NativeV3_SetSetpoint(&s_controller, cm, 1U);
+}
+
+void MechBalance_SetVisionTargetOnly(float cm)
+{
+    (void)NativeV3_SetSetpoint(&s_controller, cm, 0U);
+}
+
+void MechBalance_SetVisKp(float kp)
+{
+    NativeV3_SetGains(&s_controller, kp, s_controller.cfg.ki,
+                      s_controller.cfg.kd);
+}
+
+void MechBalance_SetVisKd(float kd)
+{
+    NativeV3_SetGains(&s_controller, s_controller.cfg.kp,
+                      s_controller.cfg.ki, kd);
+}
+
+void MechBalance_SetVisKi(float ki)
+{
+    NativeV3_SetGains(&s_controller, s_controller.cfg.kp, ki,
+                      s_controller.cfg.kd);
+}
+
+void MechBalance_SetVisOutputMin(float minimum_deg)
+{
+    NativeV3_SetOutputLimits(&s_controller, minimum_deg,
+                             s_controller.cfg.output_max_deg);
+}
+
+void MechBalance_SetVisOutputMax(float maximum_deg)
+{
+    NativeV3_SetOutputLimits(&s_controller, s_controller.cfg.output_min_deg,
+                             maximum_deg);
+}
+
+void MechBalance_GetVisionStatus(VisionStatus_t *status)
+{
+    NativeV3_Status_t detailed;
+
+    if (status == 0) return;
+    NativeV3_GetStatus(&s_controller, &detailed);
+    status->active = detailed.requested;
+    status->valid = detailed.vision_valid;
+    status->fault = s_emergency_stop;
+    status->ball_pos_cm = detailed.position_cm;
+    status->setpoint_cm = detailed.setpoint_cm;
+    status->pid_out_deg = s_theta_command;
+    status->ball_velocity_cm_s = detailed.velocity_cm_s;
+    status->vis_kp = s_controller.cfg.kp;
+    status->vis_kd = s_controller.cfg.kd;
+    status->vis_ki = s_controller.cfg.ki;
+    status->out_min = s_controller.cfg.output_min_deg;
+    status->out_max = s_controller.cfg.output_max_deg;
+}
+
+void MechBalanceV3_GetDetailedStatus(NativeV3_Status_t *status)
+{
+    NativeV3_GetStatus(&s_controller, status);
+}
+
+void MechBalance_EmergencyStop(void) { latch_emergency(); }
+
+void MechBalance_SetParam(uint8_t id, float value)
+{
+    if (!finitef(value)) return;
+    switch (id) {
+    case MP_GRAVITY:
+        if (value >= 8.0f && value <= 11.0f) s_params.gravity = value;
+        break;
+    case MP_GAIN_FWD:
+        if (value >= 0.0f && value <= 2.0f) s_params.accel_gain_fwd = value;
+        break;
+    case MP_GAIN_BRAKE:
+        if (value >= 0.0f && value <= 2.0f) s_params.accel_gain_brake = value;
+        break;
+    case MP_ACCEL_BIAS:
+        if (value >= -3.0f && value <= 3.0f) s_params.accel_bias = value;
+        break;
+    case MP_TRIM:
+        if (value >= -4.0f && value <= 4.0f) s_params.theta_trim_deg = value;
+        break;
+    case MP_RATE_LIMIT:
+        if (value >= 10.0f && value <= V3_NORMAL_RATE_MAX_DEG_S) {
+            s_params.theta_rate_limit = value;
+        }
+        break;
+    case MP_PITCH:
+        if (value >= -10.0f && value <= 10.0f) s_params.pitch_deg = value;
+        break;
+    default:
+        break;
+    }
+}
+
+const MechParams_t *MechBalance_GetParams(void) { return &s_params; }
+
+void MechBalance_Tick5ms(void)
+{
+    BallData_t ball;
+    NativeV3_Status_t status;
+    float pwm_angle, current_angle, correction, target, rate;
+    uint8_t ball_valid, new_frame;
+
+    if (s_emergency_stop) return;
+    if (CL_GetFault(MOTOR_AXIS_X) != CL_FAULT_NONE) {
+        latch_emergency();
+        return;
+    }
+
+    if (!Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm_angle)) {
+        /* A transient feedback loss inhibits output but does not clear V. */
+        CL_Stop(MOTOR_AXIS_X);
+        return;
+    }
+    if (pwm_angle < PWM_LIMIT_LOW || pwm_angle > PWM_LIMIT_HIGH) {
+        latch_emergency();
+        return;
+    }
+
+    ball_valid = ProtoRx_GetBall(&ball);
+    new_frame = (ball_valid && ball.frame_id != s_last_frame_id) ? 1U : 0U;
+    if (new_frame) {
+        s_last_frame_id = ball.frame_id;
+        if (!NativeV3_ObserveDirect(&s_controller,
+                                    (float)ball.position_centi_cm / 100.0f,
+                                    ball.confidence)) {
+            NativeV3_MarkVisionMissing(&s_controller);
+        }
+    } else if (!ball_valid) {
+        NativeV3_MarkVisionMissing(&s_controller);
+    }
+
+    correction = NativeV3_Tick5ms(&s_controller);
+    NativeV3_GetStatus(&s_controller, &status);
+
+    if (s_direct_mode) {
+        target = s_direct_deg;
+        rate = s_params.theta_rate_limit;
+    } else {
+        target = acceleration_base_angle() + correction;
+        rate = (status.requested && !status.vision_valid) ?
+            V3_LOST_RATE_DEG_S : s_params.theta_rate_limit;
+    }
+
+    target = clampf(target, V3_MECH_ANGLE_MIN_DEG, V3_MECH_ANGLE_MAX_DEG);
+    current_angle = CL_GetCurrentAngle(MOTOR_AXIS_X);
+    if (pwm_angle >= PWM_LIMIT_HIGH - PWM_LIMIT_MARGIN &&
+        target > current_angle) target = current_angle;
+    if (pwm_angle <= PWM_LIMIT_LOW + PWM_LIMIT_MARGIN &&
+        target < current_angle) target = current_angle;
+
+    if (CL_SetTargetAngle(MOTOR_AXIS_X, slew_to(target, rate)) != MOTOR_OK) {
+        latch_emergency();
+    }
+}
