@@ -62,6 +62,7 @@ void    MechBalance_SetVisOutputMin(float omin);
 void    MechBalance_SetVisOutputMax(float omax);
 void    MechBalance_EnableFFMerge(uint8_t en);
 uint8_t MechBalance_IsFFMerged(void);
+void    MechBalance_SetFFLimit(float deg);   /* 前馈角度限幅 (串口E命令) */
 void    MechBalance_GetVisionStatus(VisionStatus_t *s);
 void    MechBalance_EmergencyStop(void);
 

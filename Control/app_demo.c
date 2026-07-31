@@ -277,6 +277,7 @@ static void Demo_PollUart(void)
                         if (v != 0.0f) { MechBalance_EnableFFMerge(1U); uart_puts("OK FF merge ON"); }
                         else { MechBalance_EnableFFMerge(0U); uart_puts("OK FF merge OFF"); }
                         break;
+                    case 'E': MechBalance_SetFFLimit(v); uart_puts("OK ff_limit="); uart_putf(v,1); break;
                     default: uart_puts("ERR cmd"); break;
                     }
                     uart_puts("\r\n");
@@ -287,7 +288,7 @@ static void Demo_PollUart(void)
             }
         }
         /* A/T/G/B/L/R/D/N/J/M/I/O/U/F 命令开头 */
-        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='N'||ch=='n'||ch=='J'||ch=='j'||ch=='M'||ch=='m'||ch=='I'||ch=='i'||ch=='O'||ch=='o'||ch=='U'||ch=='u'||ch=='F'||ch=='f') {
+        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='N'||ch=='n'||ch=='J'||ch=='j'||ch=='M'||ch=='m'||ch=='I'||ch=='i'||ch=='O'||ch=='o'||ch=='U'||ch=='u'||ch=='F'||ch=='f'||ch=='E'||ch=='e') {
             if (s_line_len < sizeof(s_line) - 1U) {
                 s_line[s_line_len++] = ch;
             }

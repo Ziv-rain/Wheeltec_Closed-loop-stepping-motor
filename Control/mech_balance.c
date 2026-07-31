@@ -75,7 +75,13 @@ static float slew_to(float target, float rate_deg_s)
 }
 
 /* 力学前馈: 加速度 -> 抵消惯性的摆杆倾角 (限幅防电机猛甩) */
-#define FF_ANGLE_LIMIT_DEG 15.0f   /* 15度≈抵消2.7m/s2, 覆盖比赛加速范围 */
+#define FF_ANGLE_LIMIT_DEG 15.0f   /* 默认15度≈抵消2.7m/s2, 串口E命令可调 */
+static float s_ff_angle_limit = FF_ANGLE_LIMIT_DEG;
+
+void MechBalance_SetFFLimit(float deg)
+{
+    if (finitef(deg) && deg >= 4.0f && deg <= 20.0f) s_ff_angle_limit = deg;
+}
 static float acceleration_base_angle(void)
 {
     float gain, acceleration_ff, phi_rad, angle;
@@ -87,7 +93,7 @@ static float acceleration_base_angle(void)
     phi_rad = atan2f(-acceleration_ff, s_params.gravity);
     angle = phi_rad * 57.29578f - s_params.pitch_deg +
             s_params.theta_trim_deg;
-    return clampf(angle, -FF_ANGLE_LIMIT_DEG, FF_ANGLE_LIMIT_DEG);
+    return clampf(angle, -s_ff_angle_limit, s_ff_angle_limit);
 }
 
 static void latch_emergency(void)
