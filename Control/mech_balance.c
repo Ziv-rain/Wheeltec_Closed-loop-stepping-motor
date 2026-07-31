@@ -98,7 +98,7 @@ void MechBalance_Init(void)
     s_direct_deg = 0.0f;
     PID_Init(&s_vis_pid, VIS_KP, VIS_KI, VIS_KD, VIS_INTEGRAL_LIMIT,
              VIS_OUTPUT_MIN_DEG, VIS_OUTPUT_MAX_DEG);
-    s_vis_active = 1;  /* 上电自动启动PID, 回零完成后立即生效 */
+    s_vis_active = 0;  /* 上电不启动PID, 等主控赛题指令或串口V命令 */
     s_vis_setpoint_cm = 0.0f;
     s_vis_ball_pos_cm = 0.0f;
     s_vis_pid_out = 0.0f;

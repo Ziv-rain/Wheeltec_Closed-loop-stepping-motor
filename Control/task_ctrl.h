@@ -17,6 +17,7 @@ void TaskCtrl_Process(void);
 void TaskCtrl_FeedByte(uint8_t byte);
 void TaskCtrl_ReportBallPos(float cm);
 void TaskCtrl_ReportBallInvalid(void);
+uint8_t TaskCtrl_GetWheelAccel(float *ax_mps2); /* 车轮加速度: 0=暂无数据 */
 void TaskCtrl_ReportFault(void);
 uint8_t TaskCtrl_GetInfo(TaskInfo_t *info);
 #endif

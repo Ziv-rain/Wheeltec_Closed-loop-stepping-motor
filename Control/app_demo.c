@@ -372,10 +372,37 @@ void Demo_Tick5ms(void)
     CL_Process(); CL_Process(); CL_Process(); CL_Process();
 #elif (DEMO_SELECT == 8)
     ProtoRx_Tick(CL_PERIOD_MS);
+    TaskCtrl_Tick5ms();                          /* AA55命令处理 + 状态机 */
     BallControl_Tick5ms();
     if (BallControl_IsHomingReady()) {
+        TaskInfo_t ti;
+        float touch_cm;
+        /* 触摸目标: TYPE 0x31 优先于赛题SP */
+        if (ProtoRx_GetTouchTarget(&touch_cm)) {
+            MechBalance_SetVisionTargetOnly(touch_cm);
+            if (!MechBalance_IsVisionActive()) MechBalance_StartVision();
+        }
+        /* 赛题T4/T5/T6运行中 -> 视觉PID使用任务设定点 */
+        else if (TaskCtrl_GetInfo(&ti) && ti.state == STATE_RUNNING
+            && ti.task_id >= TASK_4 && ti.task_id <= TASK_6) {
+            MechBalance_SetVisionTargetOnly(ti.setpoint_cm);
+            if (!MechBalance_IsVisionActive()) MechBalance_StartVision();
+        }
+        /* 车轮编码器加速度 -> 力学前馈补偿 */
+        {
+            float ax;
+            if (TaskCtrl_GetWheelAccel(&ax)) MechBalance_SetAccel(ax);
+        }
         MechBalance_Tick5ms();
+        /* 上报球位置 -> 0x41状态帧 */
+        {
+            VisionStatus_t vs;
+            MechBalance_GetVisionStatus(&vs);
+            if (vs.valid) TaskCtrl_ReportBallPos(vs.ball_pos_cm);
+            else TaskCtrl_ReportBallInvalid();
+        }
     } else if (BallControl_HasFault()) {
+        TaskCtrl_ReportFault();
         MechBalance_EmergencyStop();
     }
     CL_Process();
@@ -388,6 +415,10 @@ void Demo_Tick5ms(void)
 void Demo_Process(void)
 {
     Demo_PollUart();
+
+#if (DEMO_SELECT == 5) || (DEMO_SELECT == 8)
+    TaskCtrl_Process();  /* UART1上行: 0x41状态帧 + 0xFF心跳 */
+#endif
 
 #if (DEMO_SELECT == 1)
     if (Motor_IsBusy(MOTOR_AXIS_X) == 0U && (s_ms - s_last_action) >= 1000U) {

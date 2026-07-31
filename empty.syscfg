@@ -64,9 +64,9 @@ UART2.peripheral.txPin.$assign = "PA21";
 UART2.txPinConfig.$name        = "UART2_TX_PIN_CONFIG";
 UART2.rxPinConfig.$name        = "UART2_RX_PIN_CONFIG";
 
-/* UART1: PA18(TX) / PA17(RX), 115200bps, 主控通信 */
+/* UART1: PA18(TX) / PA17(RX), 9600bps, 主控通信 */
 UART3.$name                    = "UART_1";
-UART3.targetBaudRate           = 115200;
+UART3.targetBaudRate           = 9600;
 UART3.enableFIFO               = true;
 UART3.peripheral.rxPin.$assign = "PA18";
 UART3.peripheral.txPin.$assign = "PA17";
