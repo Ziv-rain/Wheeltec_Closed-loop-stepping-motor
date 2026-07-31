@@ -203,13 +203,8 @@ static void Demo_PollUart(void)
             uart_puts("\r\n");
 #if (DEMO_SELECT == 8)
         } else if (ch == 'V' || ch == 'v') {
-            if (!BallControl_IsHomingReady()) {
-                uart_puts("ERR homing not ready\r\n");
-            } else if (MechBalance_StartVision()) {
-                uart_puts("Vision PID started\r\n");
-            } else {
-                uart_puts("ERR vision/PWM invalid\r\n");
-            }
+            MechBalance_StartVision();
+            uart_puts("Vision PID started\r\n");
         } else if (ch == 'W' || ch == 'w') {
             MechBalance_StopVision();
             uart_puts("Vision PID stopped\r\n");

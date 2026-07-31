@@ -150,21 +150,13 @@ static void VisHold(void)
 
 uint8_t MechBalance_StartVision(void)
 {
-    BallData_t ball;
-    float pwm;
-    if (s_emergency_stop || !ProtoRx_GetBall(&ball) ||
-        !Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm) ||
-        pwm <= PWM_LIMIT_LOW || pwm >= PWM_LIMIT_HIGH) {
-        VisHold();
-        return 0U;
-    }
+    if (s_emergency_stop) return 0U;
     s_seq_active = 0;
     s_seq_step = 0;
     s_vis_active = 1;
     s_direct_mode = 0;
-    s_vis_valid = 1;
+    s_vis_valid = 0;
     s_vis_fault = 0;
-    s_vis_ball_pos_cm = (float)ball.position_centi_cm / 100.0f;
     PID_Reset(&s_vis_pid);
     return 1U;
 }
