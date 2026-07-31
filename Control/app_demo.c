@@ -409,10 +409,15 @@ void Demo_Tick5ms(void)
             MechBalance_SetVisionTargetOnly(ti.setpoint_cm);
             if (!MechBalance_IsVisionActive()) MechBalance_StartVision();
         }
-        /* 车轮编码器加速度 -> 力学前馈补偿 */
+        /* 车轮编码器加速度 -> 力学前馈补偿 (仅新帧才喂EMA, 避免5ms重复放大) */
         {
-            float ax;
-            if (TaskCtrl_GetWheelAccel(&ax)) MechBalance_SetAccel(ax);
+            static uint32_t s_last_wframe;
+            uint32_t wf = TaskCtrl_GetWheelFrame();
+            if (wf != s_last_wframe) {
+                s_last_wframe = wf;
+                float ax;
+                if (TaskCtrl_GetWheelAccel(&ax)) MechBalance_SetAccel(ax);
+            }
         }
         MechBalance_Tick5ms();
         /* 上报球位置 -> 0x41状态帧 */
