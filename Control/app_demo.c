@@ -113,6 +113,176 @@ static void Demo4_HandleCommand(char *line)
 }
 #endif
 
+/* ---- Experiment 7: seven-phase open-loop ball sequence ---- */
+#if (DEMO_SELECT == 7)
+static uint8_t Demo7_ParseFloat(const char *text, float *value)
+{
+    float result = 0.0f, fraction = 0.1f;
+    uint8_t negative = 0U, has_digit = 0U;
+    if (text == 0 || value == 0) return 0U;
+    if (*text == '-' || *text == '+') {
+        negative = (*text == '-') ? 1U : 0U;
+        text++;
+    }
+    while (*text >= '0' && *text <= '9') {
+        result = result * 10.0f + (float)(*text - '0');
+        if (result > 100000.0f) return 0U;
+        has_digit = 1U;
+        text++;
+    }
+    if (*text == '.') {
+        text++;
+        while (*text >= '0' && *text <= '9') {
+            result += (float)(*text - '0') * fraction;
+            fraction *= 0.1f;
+            has_digit = 1U;
+            text++;
+        }
+    }
+    if (has_digit == 0U || *text != '\0') return 0U;
+    *value = negative != 0U ? -result : result;
+    return 1U;
+}
+
+static const char *Demo7_StatusName(MechStatus_t status)
+{
+    switch (status) {
+    case MECH_STATUS_ARMED: return "ARMED";
+    case MECH_STATUS_RUNNING: return "RUNNING";
+    case MECH_STATUS_FINISHED: return "FINISHED";
+    case MECH_STATUS_STOPPED: return "STOPPED";
+    case MECH_STATUS_FAULT_PWM: return "FAULT_PWM";
+    case MECH_STATUS_FAULT_LIMIT: return "FAULT_LIMIT";
+    default: return "FAULT_DRIVER";
+    }
+}
+
+static void Demo7_PrintHelp(void)
+{
+    uart_puts("\r\n========== Exp7 Open-loop Sequence ==========\r\n");
+    uart_puts(" H help | S status | V print phases | P params\r\n");
+    uart_puts(" K1 run 0->+5 | K2 run +5->-5 | K run full sequence\r\n");
+    uart_puts(" Qn<deg> set phase angle, En<ms> set phase time (n=1..7)\r\n");
+    uart_puts(" D<deg> direct test | T<deg> level trim | R<dps> slew rate\r\n");
+    uart_puts(" X immediate latched emergency stop; other commands need Enter\r\n");
+    uart_puts("=============================================\r\n");
+}
+
+static void Demo7_PrintStatus(void)
+{
+    CL_Snapshot_t snap;
+    float pwm = 0.0f;
+    uint8_t pwm_ok;
+    CL_GetSnapshot(MOTOR_AXIS_X, &snap);
+    pwm_ok = Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm);
+    uart_puts("State="); uart_puts(Demo7_StatusName(MechBalance_GetStatus()));
+    uart_puts(" Home=");
+    if (BallControl_IsHomingReady()) uart_puts("READY");
+    else if (BallControl_HasFault()) uart_puts("FAULT");
+    else uart_puts("SEEK");
+    uart_puts(" Seq="); uart_puts(MechBalance_IsSeqActive() ? "RUN" : "IDLE");
+    uart_puts(" Step="); uart_putu((uint32_t)MechBalance_GetSeqStep() + 1U);
+    uart_puts(" Elapsed="); uart_putu(MechBalance_GetSeqElapsed());
+    uart_puts("ms Tgt="); uart_putf(snap.target_angle_deg, 2);
+    uart_puts(" Act="); uart_putf(snap.current_angle_deg, 2);
+    uart_puts(" PWM="); if (pwm_ok) uart_putf(pwm, 2); else uart_puts("N/A");
+    uart_puts("\r\n");
+}
+
+static void Demo7_PrintSequence(void)
+{
+    uint8_t index;
+    for (index = 0U; index < MECH_SEQ_STEP_COUNT; index++) {
+        uart_puts("Phase "); uart_putu((uint32_t)index + 1U);
+        uart_puts(": angle="); uart_putf(MechBalance_GetSeqAngle(index), 4);
+        uart_puts(" deg time="); uart_putu(MechBalance_GetSeqTime(index));
+        uart_puts(" ms\r\n");
+    }
+}
+
+static void Demo7_PrintParams(void)
+{
+    const MechParams_t *params = MechBalance_GetParams();
+    uart_puts("trim="); uart_putf(params->theta_trim_deg, 4);
+    uart_puts(" rate="); uart_putf(params->theta_rate_limit, 1);
+    uart_puts(" limits=["); uart_putf(MECH_ANGLE_MIN_DEG, 1);
+    uart_puts(","); uart_putf(MECH_ANGLE_MAX_DEG, 1);
+    uart_puts("]\r\n");
+}
+
+static void Demo7_HandleCommand(char *line)
+{
+    char command;
+    float value;
+    uint8_t index, ok = 0U;
+    if (line == 0 || line[0] == '\0') return;
+    command = line[0];
+    if (command >= 'a' && command <= 'z') command = (char)(command - 'a' + 'A');
+
+    if (line[1] == '\0') {
+        if (command == 'H' || command == '?') { Demo7_PrintHelp(); return; }
+        if (command == 'S') { Demo7_PrintStatus(); return; }
+        if (command == 'V') { Demo7_PrintSequence(); return; }
+        if (command == 'P') { Demo7_PrintParams(); return; }
+        if (command == 'K') {
+            ok = BallControl_IsHomingReady() && MechBalance_StartSeq(0U);
+            uart_puts(ok ? "OK full sequence started\r\n" :
+                           "ERR not homed, stopped, or already running\r\n");
+            return;
+        }
+        if (command == 'Z') {
+            uart_puts("ERR zero is owned by automatic homing\r\n");
+            return;
+        }
+    }
+
+    if (command == 'K' && line[2] == '\0' &&
+        (line[1] == '1' || line[1] == '2')) {
+        ok = BallControl_IsHomingReady() &&
+             MechBalance_StartSeq((uint8_t)(line[1] - '0'));
+        uart_puts(ok ? "OK sequence started\r\n" :
+                       "ERR not homed, stopped, or already running\r\n");
+        return;
+    }
+
+    if (command == 'Q' || command == 'E') {
+        if (line[1] < '1' || line[1] > '7') {
+            uart_puts("ERR phase index must be 1..7\r\n");
+            return;
+        }
+        index = (uint8_t)(line[1] - '1');
+        if (!Demo7_ParseFloat(&line[2], &value)) {
+            uart_puts("ERR expected Qn<deg> or En<ms>\r\n");
+            return;
+        }
+        if (command == 'Q') {
+            ok = MechBalance_SetSeqAngle(index, value);
+        } else if (value >= 0.0f && value == (float)(uint32_t)value) {
+            ok = MechBalance_SetSeqTime(index, (uint32_t)value);
+        }
+    } else {
+        if (!Demo7_ParseFloat(&line[1], &value)) {
+            uart_puts("ERR expected command followed by one number\r\n");
+            return;
+        }
+        switch (command) {
+        case 'A':
+            ok = MechBalance_SetAccel(value);
+            if (ok) MechBalance_ExitDirect();
+            break;
+        case 'D': ok = MechBalance_SetDirectAngle(value); break;
+        case 'T': ok = MechBalance_SetParam(MP_TRIM, value); break;
+        case 'G': ok = MechBalance_SetParam(MP_GAIN_FWD, value); break;
+        case 'B': ok = MechBalance_SetParam(MP_GAIN_BRAKE, value); break;
+        case 'R': ok = MechBalance_SetParam(MP_RATE_LIMIT, value); break;
+        default: break;
+        }
+    }
+    uart_puts(ok ? "OK\r\n" :
+                   "ERR command/value unsafe or sequence is running\r\n");
+}
+#endif
+
 /* ---- Experiment 2: Encoder Read ---- */
 #if (DEMO_SELECT == 2)
 static void Demo2_SetMotion(uint8_t motion)
@@ -157,95 +327,22 @@ static void Demo_PollUart(void)
         }
 #else
 #if (DEMO_SELECT == 7)
-        /* 模式7: 纯力学补偿调参 */
-        if (ch == 'S' || ch == 's') {
-            CL_Snapshot_t snap; float pwm=0; uint8_t ok;
-            CL_GetSnapshot(MOTOR_AXIS_X, &snap);
-            ok = Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm);
-            uart_puts("Tgt="); uart_putf(snap.target_angle_deg, 2);
-            uart_puts(" Act="); uart_putf(snap.current_angle_deg, 2);
-            uart_puts(" PWM="); if(ok) uart_putf(pwm,2); else uart_puts("N/A");
-            uart_puts("\r\n");
-        } else if (ch == 'Z' || ch == 'z') {
-            CL_SetZero(MOTOR_AXIS_X);
-            uart_puts("Zero set\r\n");
-        } else if (ch == 'P' || ch == 'p') {
-            const MechParams_t *m = MechBalance_GetParams();
-            uart_puts("g="); uart_putf(m->gravity,2);
-            uart_puts(" fwd="); uart_putf(m->accel_gain_fwd,2);
-            uart_puts(" brk="); uart_putf(m->accel_gain_brake,2);
-            uart_puts(" trim="); uart_putf(m->theta_trim_deg,2);
-            uart_puts(" rate="); uart_putf(m->theta_rate_limit,0);
-            uart_puts("\r\n");
-        }
-        /* 回车优先处理: 触发命令解析 (必须在缓冲分支之前) */
-        else if (ch == '\r' || ch == '\n') {
-            if (s_line_len > 0U) {
-                char c = s_line[0];
-                float v = 0.0f;
-                uint8_t i, neg = 0, has_digit = 0, idx = 0;
-                /* 手动解析浮点数 (TI libc 的 sscanf %f 不可用) */
-                if (c>='a'&&c<='z') c -= 32;
-                /* K: 单字符命令, 执行角度序列 */
-                if (c == 'K' && s_line_len == 1U) {
-                    MechBalance_StartSeq();
-                    uart_puts("OK seq start\r\n");
-                    s_line_len = 0U;
-                    continue;
-                }
-                /* Q/E: 数字从 s_line[2] 开始, s_line[1] 是步索引 1-4 */
-                i = (c=='Q'||c=='E') ? 2U : 1U;
-                if (c=='Q'||c=='E') {
-                    if (s_line[1] >= '1' && s_line[1] <= '4') idx = (uint8_t)(s_line[1]-'1');
-                    else { uart_puts("ERR idx\r\n"); s_line_len = 0U; continue; }
-                }
-                while (i < s_line_len && s_line[i] == ' ') i++;  /* 跳过前导空格 */
-                if (i < s_line_len && s_line[i] == '-') { neg = 1; i++; }
-                else if (i < s_line_len && s_line[i] == '+') { i++; }
-                while (i < s_line_len && s_line[i] >= '0' && s_line[i] <= '9') {
-                    v = v * 10.0f + (float)(s_line[i] - '0');
-                    has_digit = 1; i++;
-                }
-                if (i < s_line_len && s_line[i] == '.') {
-                    float frac = 0.1f;
-                    i++;
-                    while (i < s_line_len && s_line[i] >= '0' && s_line[i] <= '9') {
-                        v += (float)(s_line[i] - '0') * frac;
-                        frac *= 0.1f; i++; has_digit = 1;
-                    }
-                }
-                if (neg) v = -v;
-                if (has_digit) {
-                    switch(c) {
-                    case 'A': MechBalance_ExitDirect(); MechBalance_SetAccel(v); uart_puts("OK accel="); uart_putf(v,3); break;
-                    case 'D': MechBalance_SetDirectAngle(v); uart_puts("OK dir="); uart_putf(v,2); break;
-                    case 'T': MechBalance_SetParam(MP_TRIM, v); uart_puts("OK trim="); uart_putf(v,2); break;
-                    case 'G': MechBalance_SetParam(MP_GAIN_FWD, v); uart_puts("OK fwd="); uart_putf(v,2); break;
-                    case 'B': MechBalance_SetParam(MP_GAIN_BRAKE, v); uart_puts("OK brk="); uart_putf(v,2); break;
-                    case 'L': MechBalance_SetParam(MP_RATE_LIMIT, v); uart_puts("OK rate="); uart_putf(v,0); break;
-                    case 'R': MechBalance_SetParam(MP_RATE_LIMIT, v); uart_puts("OK rate="); uart_putf(v,0); break;
-                    case 'Q': MechBalance_SetSeqAngle(idx, v); uart_puts("OK seqA"); uart_putu((uint32_t)(idx+1)); uart_puts("="); uart_putf(v,2); break;
-                    case 'E': MechBalance_SetSeqTime(idx, (uint32_t)v); uart_puts("OK seqT"); uart_putu((uint32_t)(idx+1)); uart_puts("="); uart_putu((uint32_t)v); break;
-                    default: uart_puts("ERR cmd"); break;
-                    }
-                    uart_puts("\r\n");
-                } else {
-                    uart_puts("ERR no number\r\n");
-                }
+        if (ch == 'X' || ch == 'x') {
+            s_line_len = 0U;
+            MechBalance_EmergencyStop();
+            BallControl_EmergencyStop();
+            uart_puts("OK emergency stop latched; reboot required\r\n");
+        } else if (ch == '\r' || ch == '\n') {
+            if (s_line_len != 0U) {
+                s_line[s_line_len] = '\0';
+                Demo7_HandleCommand(s_line);
                 s_line_len = 0U;
             }
-        }
-        /* A/T/G/B/L/R/D/Q/E/K 命令开头 */
-        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='Q'||ch=='q'||ch=='E'||ch=='e'||ch=='K'||ch=='k') {
-            if (s_line_len < sizeof(s_line) - 1U) {
-                s_line[s_line_len++] = ch;
-            }
-        }
-        /* 命令进行中: 数字、小数点、负号全部进缓冲 */
-        else if (s_line_len > 0U) {
-            if (s_line_len < sizeof(s_line) - 1U) {
-                s_line[s_line_len++] = ch;
-            }
+        } else if (s_line_len < sizeof(s_line) - 1U) {
+            s_line[s_line_len++] = ch;
+        } else {
+            s_line_len = 0U;
+            uart_puts("ERR command too long\r\n");
         }
 #else
         /* 模式5(平衡球)下调试串口入口 */
@@ -313,15 +410,8 @@ void Demo_Init(void)
     uart_puts("- Serial command mode\r\n");
     Demo4_PrintHelp();
 #elif (DEMO_SELECT == 7)
-    uart_puts("- Mechanical balance (pure feedforward)\r\n");
-    uart_puts("  A<val>  set accel m/s2\r\n");
-    uart_puts("  T<val>  set trim deg\r\n");
-    uart_puts("  G<val>  set fwd gain\r\n");
-    uart_puts("  B<val>  set brake gain\r\n");
-    uart_puts("  L<val>  set angle limit deg\r\n");
-    uart_puts("  R<val>  set rate limit deg/s\r\n");
-    uart_puts("  P       print params\r\n");
-    uart_puts("  S       print status\r\n");
+    uart_puts("- Seven-phase open-loop ball sequence\r\n");
+    Demo7_PrintHelp();
 #else
     uart_puts("- Ball control mode (UART2 vision + PID)\r\n");
 #endif
@@ -338,9 +428,13 @@ void Demo_Tick5ms(void)
     BallControl_Tick5ms();
     CL_Process(); CL_Process(); CL_Process(); CL_Process();
 #elif (DEMO_SELECT == 7)
-    BallControl_Tick5ms();  /* 上电自动回零; 回零完成后因无RUNNING状态不会启动PID */
-    MechBalance_Tick5ms();
-    CL_Process(); CL_Process(); CL_Process(); CL_Process();
+    BallControl_Tick5ms();
+    if (BallControl_IsHomingReady()) {
+        MechBalance_Tick5ms();
+    } else if (BallControl_HasFault()) {
+        MechBalance_EmergencyStop();
+    }
+    CL_Process();
 #elif (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
     CL_Process();
 #endif
