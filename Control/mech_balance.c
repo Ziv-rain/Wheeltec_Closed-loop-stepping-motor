@@ -138,8 +138,8 @@ uint8_t MechBalance_IsDirect(void) { return s_direct_mode; }
 void MechBalance_SetAccel(float ax_mps2)
 {
     if (!finitef(ax_mps2)) return;
-    /* 物理合理上限: 比赛小车加速度不会超8m/s2, 伪值/回绕直接丢弃 */
-    if (fabsf(ax_mps2) > 8.0f) return;
+    /* 物理合理上限: 比赛加速度<=2, 4.94/6.39等异常直接丢弃 */
+    if (fabsf(ax_mps2) > 3.0f) return;
     /* EMA低通: 编码器两次差分噪声大, 0.5为新值权重(~2帧响应) */
     s_accel_mps2 = 0.50f * s_accel_mps2 + 0.50f * ax_mps2;
     /* 死区: 微小加速度忽略 */

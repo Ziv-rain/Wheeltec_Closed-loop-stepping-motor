@@ -296,7 +296,7 @@ void NativeV3_DefaultConfig(NativeV3_Config_t *cfg)
     cfg->moving_velocity_cm_s = 0.40f;   /* 释放速度提高: 球需真正滚起来才释放 */
     cfg->stiction_confirm_ms = 300U;
     cfg->breakaway_positive_deg = 3.50f;
-    cfg->breakaway_negative_deg = -5.50f;
+    cfg->breakaway_negative_deg = -6.50f;   /* 安全网: 负侧远端卡死(需9.1度)也能推动 */
     cfg->breakaway_release_cm = 0.25f;   /* 释放位移提高: 推出静摩擦区才释放 */
     cfg->breakaway_max_ms = 300U;        /* 脱困时间延长: 更多时间推球 */
 
