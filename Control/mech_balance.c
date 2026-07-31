@@ -108,7 +108,7 @@ void MechBalance_Tick5ms(void)
         if (s_seq_elapsed >= s_seq_times[s_seq_step]) {
             s_seq_elapsed = 0U;
             if (s_seq_step < 3U) s_seq_step++;
-            else { s_seq_active = 0; s_seq_step = 0; }  /* 序列结束, 回水平 */
+            else { MechBalance_ExitDirect(); s_seq_step = 0; }  /* 序列结束: 退出直接模式, 回力学补偿(trim) */
         }
         s_direct_deg = s_seq_angles[s_seq_step];
         theta_target = s_direct_deg;
