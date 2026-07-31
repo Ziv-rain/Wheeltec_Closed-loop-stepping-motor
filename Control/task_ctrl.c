@@ -33,7 +33,7 @@ static volatile uint8_t diag,dt;static volatile float dsp;
 
 static uint16_t crc16_update(uint16_t c,uint8_t b){c^=b;for(uint8_t i=0;i<8;i++)c=(c&1)?(c>>1)^0xA001:c>>1;return c;}
 static uint16_t crc16_frame(uint8_t t,uint8_t l,const uint8_t*d){uint16_t c=0;c=crc16_update(c,t);c=crc16_update(c,l);for(uint8_t i=0;i<l;i++)c=crc16_update(c,d[i]);return c;}
-/* 单一AA55解析器, 消除rx/rx0重复; 收到完整有D:\MyProject\TI\2026\Wheeltec_Closed-loop-stepping-motor\力学模型效帧返回1并通过out参数输出 */
+/* 单一AA55解析器，消除rx/rx0重复；收到完整有效帧后通过out参数输出。 */
 static uint8_t aa55(AA55_t*st,uint8_t b,uint8_t*t,uint8_t*l,uint8_t**d){uint16_t c;switch(st->s){case 0:if(b==0xAA)st->s=1;break;case 1:if(b==0x55)st->s=2;else st->s=(b==0xAA)?1:0;break;case 2:st->t=b;st->s=3;break;case 3:st->l=b;st->i=0;if(st->l>8){st->s=0;break;}st->s=st->l?4:5;break;case 4:st->d[st->i++]=b;if(st->i>=st->l)st->s=5;break;case 5:st->c=b;st->s=6;break;default:c=(uint16_t)st->c|((uint16_t)b<<8);st->s=0;if(c==crc16_frame(st->t,st->l,st->d)){*t=st->t;*l=st->l;*d=st->d;return 1;}break;}return 0;}
 static void u1tx(const uint8_t*d,uint16_t n){for(uint16_t i=0;i<n;i++){while(DL_UART_Main_isTXFIFOFull(UART_1_INST)){}DL_UART_Main_transmitData(UART_1_INST,d[i]);}}
 static void sframe(uint8_t t,const uint8_t*d,uint8_t l){uint8_t b[16];uint16_t c;if(l>8)return;b[0]=0xAA;b[1]=0x55;b[2]=t;b[3]=l;for(uint8_t i=0;i<l;i++)b[4+i]=d[i];c=crc16_frame(t,l,d);b[4+l]=(uint8_t)c;b[5+l]=(uint8_t)(c>>8);u1tx(b,l+6);}
