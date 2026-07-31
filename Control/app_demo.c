@@ -28,6 +28,10 @@ static uint32_t s_last_output;
 static uint8_t s_demo1_state;
 static uint8_t s_demo3_state;
 static uint8_t s_demo2_state;
+#if (DEMO_SELECT == 8)
+#define DEMO8_AUTO_S_MS 500U    /* 自动状态输出间隔: 观察ax/ff变化 */
+static uint32_t s_last_auto_s;
+#endif
 
 #if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
 static const char *Demo_FaultName(CL_Fault_t fault)
@@ -133,6 +137,39 @@ static void Demo2_SetMotion(uint8_t motion)
 }
 #endif
 
+#if (DEMO_SELECT == 7) || (DEMO_SELECT == 8)
+/* 打印状态行 (S命令 + DEMO8自动输出共用) */
+static void Demo8_PrintStatus(void)
+{
+    CL_Snapshot_t snap; float pwm=0; uint8_t ok;
+    CL_GetSnapshot(MOTOR_AXIS_X, &snap);
+    ok = Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm);
+    uart_puts("Tgt="); uart_putf(snap.target_angle_deg, 2);
+    uart_puts(" Act="); uart_putf(snap.current_angle_deg, 2);
+    uart_puts(" PWM="); if(ok) uart_putf(pwm,2); else uart_puts("N/A");
+#if (DEMO_SELECT == 8)
+    {
+        VisionStatus_t vs;
+        MechBalance_GetVisionStatus(&vs);
+        uart_puts(" | VIS: act="); uart_putu(vs.active);
+        uart_puts(" valid="); uart_putu(vs.valid);
+        uart_puts(" sp="); uart_putf(vs.setpoint_cm, 2);
+        uart_puts(" ball="); uart_putf(vs.ball_pos_cm, 2);
+        uart_puts(" vel="); uart_putf(vs.ball_velocity_cm_s, 2);
+        uart_puts(" out="); uart_putf(vs.pid_out_deg, 2);
+        uart_puts(" KP="); uart_putf(vs.vis_kp, 2);
+        uart_puts(" KD="); uart_putf(vs.vis_kd, 2);
+        uart_puts(" omin="); uart_putf(vs.out_min, 1);
+        uart_puts(" omax="); uart_putf(vs.out_max, 1);
+        uart_puts(" ff="); uart_putf(vs.ff_angle_deg, 2);
+        uart_puts(" ax="); uart_putf(vs.accel_mps2, 2);
+        uart_puts(" merged="); uart_putu(vs.ff_merged);
+    }
+#endif
+    uart_puts("\r\n");
+}
+#endif
+
 static void Demo_PollUart(void)
 {
     while (!DL_UART_Main_isRXFIFOEmpty(UART_0_INST)) {
@@ -165,32 +202,7 @@ static void Demo_PollUart(void)
             BallControl_EmergencyStop();
             uart_puts("OK emergency stop; reboot required\r\n");
         } else if (ch == 'S' || ch == 's') {
-            CL_Snapshot_t snap; float pwm=0; uint8_t ok;
-            CL_GetSnapshot(MOTOR_AXIS_X, &snap);
-            ok = Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm);
-            uart_puts("Tgt="); uart_putf(snap.target_angle_deg, 2);
-            uart_puts(" Act="); uart_putf(snap.current_angle_deg, 2);
-            uart_puts(" PWM="); if(ok) uart_putf(pwm,2); else uart_puts("N/A");
-#if (DEMO_SELECT == 8)
-            {
-                VisionStatus_t vs;
-                MechBalance_GetVisionStatus(&vs);
-                uart_puts(" | VIS: act="); uart_putu(vs.active);
-                uart_puts(" valid="); uart_putu(vs.valid);
-                uart_puts(" sp="); uart_putf(vs.setpoint_cm, 2);
-                uart_puts(" ball="); uart_putf(vs.ball_pos_cm, 2);
-                uart_puts(" vel="); uart_putf(vs.ball_velocity_cm_s, 2);
-                uart_puts(" out="); uart_putf(vs.pid_out_deg, 2);
-                uart_puts(" KP="); uart_putf(vs.vis_kp, 2);
-                uart_puts(" KD="); uart_putf(vs.vis_kd, 2);
-                uart_puts(" omin="); uart_putf(vs.out_min, 1);
-                uart_puts(" omax="); uart_putf(vs.out_max, 1);
-                uart_puts(" ff="); uart_putf(vs.ff_angle_deg, 2);
-                uart_puts(" ax="); uart_putf(vs.accel_mps2, 2);
-                uart_puts(" merged="); uart_putu(vs.ff_merged);
-            }
-#endif
-            uart_puts("\r\n");
+            Demo8_PrintStatus();
         } else if (ch == 'Z' || ch == 'z') {
             uart_puts("ERR zero is owned by automatic homing\r\n");
         } else if (ch == 'P' || ch == 'p') {
@@ -426,6 +438,14 @@ void Demo_Process(void)
 
 #if (DEMO_SELECT == 5) || (DEMO_SELECT == 8)
     TaskCtrl_Process();  /* UART1上行: 0x41状态帧 + 0xFF心跳 */
+#endif
+
+#if (DEMO_SELECT == 8)
+    /* 自动状态输出: 固定间隔打印S状态, 便于观察ax/ff变化趋势 */
+    if ((s_ms - s_last_auto_s) >= DEMO8_AUTO_S_MS) {
+        s_last_auto_s = s_ms;
+        Demo8_PrintStatus();
+    }
 #endif
 
 #if (DEMO_SELECT == 1)
