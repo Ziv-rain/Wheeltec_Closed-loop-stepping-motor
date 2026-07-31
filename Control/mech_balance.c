@@ -26,8 +26,8 @@
 
 static MechParams_t s_params = {
     .gravity = 9.80665f,
-    .accel_gain_fwd = 1.0f,
-    .accel_gain_brake = 1.0f,
+    .accel_gain_fwd = 1.2f,   /* 实测: 增益1.0时球仍往后走, 提高补偿 */
+    .accel_gain_brake = 1.2f,
     .accel_bias = 0.0f,
     .theta_trim_deg = 0.0f,
     .theta_rate_limit = 80.0f,
@@ -75,7 +75,7 @@ static float slew_to(float target, float rate_deg_s)
 }
 
 /* 力学前馈: 加速度 -> 抵消惯性的摆杆倾角 (限幅防电机猛甩) */
-#define FF_ANGLE_LIMIT_DEG 12.0f   /* 12度≈抵消2.1m/s2, 留余量给更大加速度 */
+#define FF_ANGLE_LIMIT_DEG 15.0f   /* 15度≈抵消2.7m/s2, 覆盖比赛加速范围 */
 static float acceleration_base_angle(void)
 {
     float gain, acceleration_ff, phi_rad, angle;
