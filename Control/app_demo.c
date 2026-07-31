@@ -193,6 +193,13 @@ static void Demo_PollUart(void)
             uart_puts(" brk="); uart_putf(m->accel_gain_brake,2);
             uart_puts(" trim="); uart_putf(m->theta_trim_deg,2);
             uart_puts(" rate="); uart_putf(m->theta_rate_limit,0);
+#if (DEMO_SELECT == 8)
+            {
+                VisionStatus_t vs;
+                MechBalance_GetVisionStatus(&vs);
+                uart_puts(" auto_vis="); uart_putu(MechBalance_GetSeqAutoVision());
+            }
+#endif
             uart_puts("\r\n");
 #if (DEMO_SELECT == 8)
         } else if (ch == 'V' || ch == 'v') {
@@ -270,6 +277,9 @@ static void Demo_PollUart(void)
                             uart_puts("ERR vis_sp range");
                         }
                         break;
+                    case 'J': MechBalance_SetVisKp(v); uart_puts("OK vis_KP="); uart_putf(v,2); break;
+                    case 'M': MechBalance_SetVisKd(v); uart_puts("OK vis_KD="); uart_putf(v,2); break;
+                    case 'I': MechBalance_SetVisKi(v); uart_puts("OK vis_KI="); uart_putf(v,2); break;
                     default: uart_puts("ERR cmd"); break;
                     }
                     uart_puts("\r\n");
@@ -279,8 +289,8 @@ static void Demo_PollUart(void)
                 s_line_len = 0U;
             }
         }
-        /* A/T/G/B/L/R/D/Q/E/K/N 命令开头 */
-        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='Q'||ch=='q'||ch=='E'||ch=='e'||ch=='K'||ch=='k'||ch=='N'||ch=='n') {
+        /* A/T/G/B/L/R/D/Q/E/K/N/J/M/I 命令开头 */
+        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='Q'||ch=='q'||ch=='E'||ch=='e'||ch=='K'||ch=='k'||ch=='N'||ch=='n'||ch=='J'||ch=='j'||ch=='M'||ch=='m'||ch=='I'||ch=='i') {
             if (s_line_len < sizeof(s_line) - 1U) {
                 s_line[s_line_len++] = ch;
             }
@@ -375,6 +385,9 @@ void Demo_Init(void)
     uart_puts("  V        start vision PID\r\n");
     uart_puts("  W        stop vision PID\r\n");
     uart_puts("  U        toggle auto-vision after seq\r\n");
+    uart_puts("  J<val>   set vision KP\r\n");
+    uart_puts("  M<val>   set vision KD\r\n");
+    uart_puts("  I<val>   set vision KI\r\n");
     uart_puts("  N<val>   set vision target cm\r\n");
     uart_puts("  Q<n><v>  set seq angle n=1..4\r\n");
     uart_puts("  E<n><v>  set seq time n=1..4 ms\r\n");

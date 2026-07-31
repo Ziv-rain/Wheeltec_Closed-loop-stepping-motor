@@ -198,6 +198,10 @@ uint8_t MechBalance_ToggleSeqAutoVision(void)
     return s_seq_auto_vis;
 }
 
+void MechBalance_SetVisKp(float kp) { if (kp > 0.0f) { s_vis_pid.kp = kp; PID_Reset(&s_vis_pid); } }
+void MechBalance_SetVisKd(float kd) { if (kd >= 0.0f) { s_vis_pid.kd = kd; PID_Reset(&s_vis_pid); } }
+void MechBalance_SetVisKi(float ki) { s_vis_pid.ki = ki; PID_Reset(&s_vis_pid); }
+
 void MechBalance_GetVisionStatus(VisionStatus_t *s)
 {
     if (s) {
