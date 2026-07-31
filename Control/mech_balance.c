@@ -75,7 +75,7 @@ static float slew_to(float target, float rate_deg_s)
 }
 
 /* 力学前馈: 加速度 -> 抵消惯性的摆杆倾角 (限幅防电机猛甩) */
-#define FF_ANGLE_LIMIT_DEG 8.0f
+#define FF_ANGLE_LIMIT_DEG 12.0f   /* 12度≈抵消2.1m/s2, 留余量给更大加速度 */
 static float acceleration_base_angle(void)
 {
     float gain, acceleration_ff, phi_rad, angle;
@@ -139,8 +139,8 @@ void MechBalance_SetAccel(float ax_mps2)
 {
     if (!finitef(ax_mps2)) return;
     ax_mps2 = clampf(ax_mps2, -30.0f, 30.0f);
-    /* EMA低通: 编码器两次差分噪声大, 0.35为新值权重(~3帧响应) */
-    s_accel_mps2 = 0.65f * s_accel_mps2 + 0.35f * ax_mps2;
+    /* EMA低通: 编码器两次差分噪声大, 0.5为新值权重(~2帧响应) */
+    s_accel_mps2 = 0.50f * s_accel_mps2 + 0.50f * ax_mps2;
     /* 死区: 微小加速度忽略 */
     if (fabsf(s_accel_mps2) < 0.05f) s_accel_mps2 = 0.0f;
 }
