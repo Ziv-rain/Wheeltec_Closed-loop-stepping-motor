@@ -46,6 +46,8 @@ typedef struct {
     float   ball_pos_cm;   /* 最近一次有效球位置(cm) */
     float   setpoint_cm;   /* 目标位置(cm) */
     float   pid_out_deg;   /* 最近一次PID输出(°) */
+    float   ball_velocity_cm_s; /* filtered ball velocity */
+    uint8_t seq_step;           /* 0=idle, 1..4=current sequence stage */
 } VisionStatus_t;
 
 uint8_t MechBalance_StartVision(void);           /* 数据和PWM有效时启动 */

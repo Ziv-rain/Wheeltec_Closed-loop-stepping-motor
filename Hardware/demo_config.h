@@ -24,14 +24,25 @@
 #define PID_INTEGRAL_LIMIT          10.0f
 
 /* ---- 视觉PID精调参数 (DEMO8) ---- */
-#define VIS_KP                      10.0f   /* 高比例: 响应快 */
-#define VIS_KD                      8.0f    /* 高微分: 抑制超调 */
+#define VIS_KP                      0.8f    /* 位置增益: deg/cm */
+#define VIS_KD                      0.25f   /* 滤波速度增益: deg/(cm/s) */
 #define VIS_KI                      0.0f
 #define VIS_INTEGRAL_LIMIT          10.0f
-#define VIS_OUTPUT_MIN_DEG          (-30.0f)
-#define VIS_OUTPUT_MAX_DEG          45.0f
-#define VIS_SETPOINT_CM             0.0f    /* 默认视觉目标位置(cm), 运行时可N命令修改 */
+#define VIS_OUTPUT_MIN_DEG          (-6.0f)
+#define VIS_OUTPUT_MAX_DEG          6.0f
+#define VIS_SETPOINT_CM             (-5.0f) /* 默认在A'侧标定点稳定，运行时可N命令修改 */
 #define VIS_SETPOINT_LIMIT_CM       9.0f
+#define VIS_VELOCITY_FILTER_ALPHA   0.70f   /* 越大越平滑，范围0..1 */
+#define VIS_POSITION_DEADBAND_CM    0.15f
+#define VIS_VELOCITY_DEADBAND_CM_S  1.0f
+
+/* 0 -> +5 -> -5 视觉辅助四阶段轨迹 */
+#define SEQ_TURNAROUND_CM           4.7f
+#define SEQ_BRAKE_LATEST_CM         (-3.0f)
+#define SEQ_BRAKE_DECEL_CM_S2       30.0f
+#define SEQ_BRAKE_MARGIN_CM         0.5f
+#define SEQ_CAPTURE_POS_TOL_CM      1.0f
+#define SEQ_CAPTURE_VEL_CM_S        1.5f
 
 /* PWM 绝对角度机械限位保护 (电机固定区间不跨0°/360°, 实测值) */
 #define PWM_LIMIT_HIGH              190.0f   /* 正极限 PWM 角度 (+50° 电机位置) */

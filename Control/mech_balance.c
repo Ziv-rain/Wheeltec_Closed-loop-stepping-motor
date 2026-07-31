@@ -36,8 +36,8 @@ static uint8_t s_direct_mode = 0;
 static float s_direct_deg = 0.0f;
 
 /* 4步序列: 每步角度(°)和时长(ms)独立可调 */
-static float s_seq_angles[SEQ_STEPS]   = { -10.0f, 10.0f, 0.0f, 0.0f };
-static uint32_t s_seq_times[SEQ_STEPS] = { 600U, 750U, 5U, 5U };
+static float s_seq_angles[SEQ_STEPS]   = { -10.0f, 6.0f, -3.0f, 0.0f };
+static uint32_t s_seq_times[SEQ_STEPS] = { 600U, 600U, 300U, 150U };
 static uint8_t s_seq_active = 0;
 static uint8_t s_seq_step = 0;
 static uint32_t s_seq_elapsed = 0;
@@ -52,8 +52,53 @@ static float    s_vis_pid_out = 0.0f;     /* 状态显示缓存 */
 static uint8_t  s_vis_valid = 0;
 static uint8_t  s_vis_fault = 0;
 static uint8_t  s_emergency_stop = 0;
+static uint32_t s_vis_last_frame_id = 0U;
+static uint32_t s_vis_sample_elapsed_ms = 0U;
+static float    s_vis_last_sample_cm = 0.0f;
+static float    s_vis_velocity_cm_s = 0.0f;
+static uint8_t  s_vis_sample_initialized = 0U;
 
 static float clampf(float v, float lo, float hi) { return v<lo?lo:(v>hi?hi:v); }
+
+static void VisionEstimatorReset(void)
+{
+    s_vis_last_frame_id = 0U;
+    s_vis_sample_elapsed_ms = 0U;
+    s_vis_last_sample_cm = 0.0f;
+    s_vis_velocity_cm_s = 0.0f;
+    s_vis_sample_initialized = 0U;
+}
+
+/* Only update velocity for a new camera frame, never for a cached sample. */
+static uint8_t VisionEstimatorUpdate(const BallData_t *b, float *position_cm,
+                                     float *sample_dt_s)
+{
+    float bp, dt, raw_velocity;
+    if (!b || b->frame_id == s_vis_last_frame_id) return 0U;
+    bp = (float)b->position_centi_cm / 100.0f;
+    dt = (float)s_vis_sample_elapsed_ms / 1000.0f;
+    if (!s_vis_sample_initialized || dt < 0.005f) {
+        s_vis_velocity_cm_s = 0.0f;
+        s_vis_sample_initialized = 1U;
+    } else {
+        raw_velocity = (bp - s_vis_last_sample_cm) / dt;
+        s_vis_velocity_cm_s =
+            VIS_VELOCITY_FILTER_ALPHA * s_vis_velocity_cm_s +
+            (1.0f - VIS_VELOCITY_FILTER_ALPHA) * raw_velocity;
+    }
+    s_vis_last_sample_cm = bp;
+    s_vis_last_frame_id = b->frame_id;
+    s_vis_sample_elapsed_ms = 0U;
+    if (position_cm) *position_cm = bp;
+    if (sample_dt_s) *sample_dt_s = dt;
+    return 1U;
+}
+
+static void SeqNextStep(void)
+{
+    s_seq_elapsed = 0U;
+    if (s_seq_step < SEQ_STEPS - 1U) s_seq_step++;
+}
 
 /* 斜坡限制输出: 每5ms最多变化 rate*0.005 度 */
 static float slew(float target)
@@ -86,6 +131,7 @@ void MechBalance_Init(void)
     s_vis_valid = 0;
     s_vis_fault = 0;
     s_emergency_stop = 0;
+    VisionEstimatorReset();
 }
 
 void MechBalance_SetDirectAngle(float deg)
@@ -126,6 +172,7 @@ void MechBalance_StartSeq(void)
     s_seq_step = 0;
     s_seq_elapsed = 0;
     s_direct_mode = 1;
+    VisionEstimatorReset();
 }
 
 void MechBalance_StopSeq(void) { s_seq_active = 0; }
@@ -157,7 +204,9 @@ uint8_t MechBalance_StartVision(void)
     s_direct_mode = 0;
     s_vis_valid = 0;
     s_vis_fault = 0;
+    s_vis_pid_out = mp.theta_trim_deg;
     PID_Reset(&s_vis_pid);
+    VisionEstimatorReset();
     return 1U;
 }
 
@@ -203,6 +252,8 @@ void MechBalance_GetVisionStatus(VisionStatus_t *s)
         s->ball_pos_cm = s_vis_ball_pos_cm;
         s->setpoint_cm = s_vis_setpoint_cm;
         s->pid_out_deg = s_vis_pid_out;
+        s->ball_velocity_cm_s = s_vis_velocity_cm_s;
+        s->seq_step = s_seq_active ? (uint8_t)(s_seq_step + 1U) : 0U;
     }
 }
 
@@ -233,11 +284,30 @@ const MechParams_t *MechBalance_GetParams(void) { return &mp; }
 
 void MechBalance_Tick5ms(void)
 {
+    BallData_t ball;
     float gain, a_ff, phi_rad, theta_target, pwm;
+    float bp = s_vis_last_sample_cm, sample_dt = 0.005f;
+    uint8_t ball_valid, new_ball;
     if (s_emergency_stop) return;
+    if (s_vis_sample_elapsed_ms <= 0xFFFFFFFFU - 5U) {
+        s_vis_sample_elapsed_ms += 5U;
+    }
+    ball_valid = ProtoRx_GetBall(&ball);
+    new_ball = ball_valid ? VisionEstimatorUpdate(&ball, &bp, &sample_dt) : 0U;
+    if (!ball_valid) s_vis_valid = 0U;
+    if (new_ball) {
+        s_vis_ball_pos_cm = bp;
+        s_vis_valid = 1U;
+    }
     if (!Encoder_GetPwmAngle(ENCODER_AXIS_X, &pwm) ||
         pwm <= PWM_LIMIT_LOW || pwm >= PWM_LIMIT_HIGH) {
         MechBalance_EmergencyStop();
+        return;
+    }
+    if (ball_valid &&
+        (bp < -VIS_SETPOINT_LIMIT_CM || bp > VIS_SETPOINT_LIMIT_CM)) {
+        s_seq_active = 0U;
+        VisHold();
         return;
     }
 
@@ -249,7 +319,26 @@ void MechBalance_Tick5ms(void)
             return;
         }
         s_seq_elapsed += 5U;
-        if (s_seq_elapsed >= s_seq_times[s_seq_step]) {
+        if (new_ball && s_seq_step == 0U && bp >= SEQ_TURNAROUND_CM) {
+            SeqNextStep();
+        } else if (new_ball && s_seq_step == 1U) {
+            float toward_speed = -s_vis_velocity_cm_s;
+            float remaining = bp - s_vis_setpoint_cm;
+            float stop_distance = 0.0f;
+            if (toward_speed > 0.0f) {
+                stop_distance = toward_speed * toward_speed /
+                                (2.0f * SEQ_BRAKE_DECEL_CM_S2);
+            }
+            if (bp <= SEQ_BRAKE_LATEST_CM ||
+                (toward_speed > SEQ_CAPTURE_VEL_CM_S &&
+                 remaining <= stop_distance + SEQ_BRAKE_MARGIN_CM)) {
+                SeqNextStep();
+            }
+        } else if (new_ball && s_seq_step == 2U &&
+                   fabsf(bp - s_vis_setpoint_cm) <= SEQ_CAPTURE_POS_TOL_CM &&
+                   fabsf(s_vis_velocity_cm_s) <= SEQ_CAPTURE_VEL_CM_S) {
+            SeqNextStep();
+        } else if (s_seq_elapsed >= s_seq_times[s_seq_step]) {
             s_seq_elapsed = 0U;
             if (s_seq_step < SEQ_STEPS - 1U) {
                 s_seq_step++;                    /* 进入下一步 */
@@ -269,14 +358,14 @@ void MechBalance_Tick5ms(void)
 
     /* ---- 模式2: 视觉PID精调 ---- */
     if (s_vis_active) {
-        BallData_t b; float bp, out, pw, ca;
-        if (!ProtoRx_GetBall(&b)) { VisHold(); return; }
+        float out, pw, ca, error;
+        if (!ball_valid) { VisHold(); return; }
         if (!Encoder_GetPwmAngle(ENCODER_AXIS_X, &pw) ||
             pw <= PWM_LIMIT_LOW || pw >= PWM_LIMIT_HIGH) {
             VisHold();
             return;
         }
-        bp = (float)b.position_centi_cm / 100.0f;
+        bp = (float)ball.position_centi_cm / 100.0f;
         if (bp < -VIS_SETPOINT_LIMIT_CM || bp > VIS_SETPOINT_LIMIT_CM) {
             VisHold();
             return;
@@ -284,11 +373,25 @@ void MechBalance_Tick5ms(void)
         s_vis_valid = 1;
         s_vis_fault = 0;
         s_vis_ball_pos_cm = bp;
-        out = PID_Update(&s_vis_pid, bp - s_vis_setpoint_cm, 0.005f);
+        if (new_ball) {
+            error = bp - s_vis_setpoint_cm;
+            if (fabsf(error) <= VIS_POSITION_DEADBAND_CM &&
+                fabsf(s_vis_velocity_cm_s) <= VIS_VELOCITY_DEADBAND_CM_S) {
+                PID_Reset(&s_vis_pid);
+                s_vis_pid_out = mp.theta_trim_deg;
+            } else {
+                out = PID_UpdateWithDerivative(&s_vis_pid, error,
+                                               s_vis_velocity_cm_s,
+                                               sample_dt);
+                s_vis_pid_out = clampf(out + mp.theta_trim_deg,
+                                       VIS_OUTPUT_MIN_DEG,
+                                       VIS_OUTPUT_MAX_DEG);
+            }
+        }
+        out = s_vis_pid_out;
         ca = CL_GetCurrentAngle(MOTOR_AXIS_X);
         if (pw >= PWM_LIMIT_HIGH - PWM_LIMIT_MARGIN && out > ca) out = ca;
         if (pw <= PWM_LIMIT_LOW  + PWM_LIMIT_MARGIN && out < ca) out = ca;
-        s_vis_pid_out = out;
         out = clampf(out, MECH_ANGLE_MIN_DEG, MECH_ANGLE_MAX_DEG);
         if (CL_SetTargetAngle(MOTOR_AXIS_X, slew(out)) != MOTOR_OK) {
             MechBalance_EmergencyStop();

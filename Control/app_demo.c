@@ -180,7 +180,9 @@ static void Demo_PollUart(void)
                 uart_puts(" fault="); uart_putu(vs.fault);
                 uart_puts(" sp="); uart_putf(vs.setpoint_cm, 2);
                 uart_puts(" ball="); uart_putf(vs.ball_pos_cm, 2);
+                uart_puts(" vel="); uart_putf(vs.ball_velocity_cm_s, 2);
                 uart_puts(" out="); uart_putf(vs.pid_out_deg, 2);
+                uart_puts(" seq="); uart_putu(vs.seq_step);
             }
 #endif
             uart_puts("\r\n");
