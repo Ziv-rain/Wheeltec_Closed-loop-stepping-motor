@@ -266,12 +266,12 @@ void NativeV3_DefaultConfig(NativeV3_Config_t *cfg)
     if (cfg == NULL) return;
 
     /* Values are derived only from this repository's measurements/history. */
-    cfg->kp = 5.0f;   /* 实机标定: 机构静摩擦大, 需高增益推动 */
-    cfg->kd = 0.10f;  /* 实机标定: 视觉速度噪声大, 小阻尼够用 */
+    cfg->kp = 0.80f;
+    cfg->kd = 0.50f;
     cfg->ki = 0.02f;
     cfg->integral_limit = 3.0f;
-    cfg->output_min_deg = -10.0f;  /* KP=5 行程大, 输出范围放宽 */
-    cfg->output_max_deg = 10.0f;
+    cfg->output_min_deg = -6.0f;
+    cfg->output_max_deg = 6.0f;
     cfg->setpoint_limit_cm = 9.0f;
 
     cfg->velocity_old_weight = 0.50f;
