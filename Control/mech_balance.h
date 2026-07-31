@@ -29,6 +29,7 @@ uint8_t MechBalance_IsDirect(void);
 #define MP_TRIM         4
 #define MP_RATE_LIMIT   5
 #define MP_PITCH        6
+#define MP_FF_ENABLE    7
 
 /* 视觉PID状态 */
 typedef struct {
@@ -44,6 +45,9 @@ typedef struct {
     float   vis_ki;
     float   out_min;
     float   out_max;
+    float   ff_angle_deg;   /* 当前加速度前馈分量 (度) */
+    uint8_t ff_merged;      /* 融合是否激活 */
+    float   accel_mps2;     /* 当前加速度值 (m/s²) */
 } VisionStatus_t;
 
 uint8_t MechBalance_StartVision(void);
@@ -56,6 +60,8 @@ void    MechBalance_SetVisKd(float kd);
 void    MechBalance_SetVisKi(float ki);
 void    MechBalance_SetVisOutputMin(float omin);
 void    MechBalance_SetVisOutputMax(float omax);
+void    MechBalance_EnableFFMerge(uint8_t en);
+uint8_t MechBalance_IsFFMerged(void);
 void    MechBalance_GetVisionStatus(VisionStatus_t *s);
 void    MechBalance_EmergencyStop(void);
 

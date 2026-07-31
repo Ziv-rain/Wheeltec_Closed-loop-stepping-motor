@@ -185,6 +185,9 @@ static void Demo_PollUart(void)
                 uart_puts(" KD="); uart_putf(vs.vis_kd, 2);
                 uart_puts(" omin="); uart_putf(vs.out_min, 1);
                 uart_puts(" omax="); uart_putf(vs.out_max, 1);
+                uart_puts(" ff="); uart_putf(vs.ff_angle_deg, 2);
+                uart_puts(" ax="); uart_putf(vs.accel_mps2, 2);
+                uart_puts(" merged="); uart_putu(vs.ff_merged);
             }
 #endif
             uart_puts("\r\n");
@@ -258,6 +261,10 @@ static void Demo_PollUart(void)
                     case 'I': MechBalance_SetVisKi(v); uart_puts("OK vis_KI="); uart_putf(v,2); break;
                     case 'O': MechBalance_SetVisOutputMin(v); uart_puts("OK out_min="); uart_putf(v,1); break;
                     case 'U': MechBalance_SetVisOutputMax(v); uart_puts("OK out_max="); uart_putf(v,1); break;
+                    case 'F':
+                        if (v != 0.0f) { MechBalance_EnableFFMerge(1U); uart_puts("OK FF merge ON"); }
+                        else { MechBalance_EnableFFMerge(0U); uart_puts("OK FF merge OFF"); }
+                        break;
                     default: uart_puts("ERR cmd"); break;
                     }
                     uart_puts("\r\n");
@@ -267,8 +274,8 @@ static void Demo_PollUart(void)
                 s_line_len = 0U;
             }
         }
-        /* A/T/G/B/L/R/D/N/J/M/I 命令开头 */
-        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='N'||ch=='n'||ch=='J'||ch=='j'||ch=='M'||ch=='m'||ch=='I'||ch=='i'||ch=='O'||ch=='o'||ch=='U'||ch=='u') {
+        /* A/T/G/B/L/R/D/N/J/M/I/O/U/F 命令开头 */
+        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='N'||ch=='n'||ch=='J'||ch=='j'||ch=='M'||ch=='m'||ch=='I'||ch=='i'||ch=='O'||ch=='o'||ch=='U'||ch=='u'||ch=='F'||ch=='f') {
             if (s_line_len < sizeof(s_line) - 1U) {
                 s_line[s_line_len++] = ch;
             }
@@ -349,8 +356,9 @@ void Demo_Init(void)
     uart_puts("  A<val> set accel  T<val> set trim  D<val> direct angle\r\n");
     uart_puts("  G/B fwd/brake gain  L/R rate limit  P print  S status  X stop\r\n");
 #elif (DEMO_SELECT == 8)
-    uart_puts("- Vision PID (Tasks 4 & 5)\r\n");
-    uart_puts("  V start  W stop  N<val> target  J/M/I KP/KD/KI  O<val> outMin  U<val> outMax  S status  P params  X stop\r\n");
+    uart_puts("- V3 State Machine + Accel FF (Tasks 4 & 5)\r\n");
+    uart_puts("  V start  W stop  N<val> target  A<val> accel m/s2  F<0|1> ff merge\r\n");
+    uart_puts("  J/M/I KP/KD/KI  O<val> outMin  U<val> outMax  S status  P params  X stop\r\n");
 #else
     uart_puts("- Ball control mode (UART2 vision + PID)\r\n");
 #endif

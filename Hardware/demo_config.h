@@ -38,6 +38,10 @@
 #define VIS_POSITION_DEADBAND_CM    0.15f   /* 未使用(PID始终运行) */
 #define VIS_VELOCITY_DEADBAND_CM_S  1.0f    /* 未使用(PID始终运行) */
 
+/* ---- V3状态机控制 (native_v3_core) ---- */
+/* 前馈融合开关: 1=状态机叠加加速度前馈(抵消车体惯性), 0=纯状态机(串口F命令可切换) */
+#define MECH_FF_MERGE_ENABLE        1
+
 /* PWM 绝对角度机械限位保护 (电机固定区间不跨0°/360°, 实测值) */
 #define PWM_LIMIT_HIGH              190.0f   /* 正极限 PWM 角度 (+50° 电机位置) */
 #define PWM_LIMIT_LOW               105.0f   /* 负极限 PWM 角度 (-35° 电机位置) */
