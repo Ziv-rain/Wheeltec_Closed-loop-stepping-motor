@@ -251,6 +251,7 @@ void Demo_Init(void)
 #endif
 #if (DEMO_SELECT == 7)
     MechBalance_Init();
+    BallControl_Init();  /* 复用自动回零状态机 */
 #endif
     uart_puts("\r\n****************************************************\r\n");
     uart_puts("*  MS42CG + D36A Closed-loop Stepper Demo          *\r\n");
@@ -296,6 +297,7 @@ void Demo_Tick5ms(void)
     BallControl_Tick5ms();
     CL_Process(); CL_Process(); CL_Process(); CL_Process();
 #elif (DEMO_SELECT == 7)
+    BallControl_Tick5ms();  /* 上电自动回零; 回零完成后因无RUNNING状态不会启动PID */
     MechBalance_Tick5ms();
     CL_Process(); CL_Process(); CL_Process(); CL_Process();
 #elif (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
