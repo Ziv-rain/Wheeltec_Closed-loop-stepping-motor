@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>球平衡视觉PID 调参指南</title>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --border:#30363d; --text:#c9d1d9; --accent:#58a6ff; --warn:#d2991d; --good:#3fb950; --err:#f85149; --dim:#8b949e; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; max-width:860px; margin:0 auto; padding:24px 16px; }
+  h1 { font-size:24px; border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:20px; }
+  h2 { font-size:18px; margin:28px 0 12px; color:var(--accent); }
+  h3 { font-size:15px; margin:20px 0 8px; }
+  .box { background:var(--card); border:1px solid var(--border); border-radius:6px; padding:16px; margin:12px 0; }
+  pre { background:#0d1117; border:1px solid var(--border); border-radius:4px; padding:12px; overflow-x:auto; font:13px/1.5 "Cascadia Code",Consolas,monospace; }
+  code { font:13px/1.4 "Cascadia Code",Consolas,monospace; background:rgba(110,118,129,0.1); padding:2px 5px; border-radius:3px; }
+  pre code { background:none; padding:0; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; }
+  th,td { border:1px solid var(--border); padding:8px 12px; text-align:left; }
+  th { background:var(--card); font-weight:600; }
+  tr:nth-child(even) { background:rgba(110,118,129,0.05); }
+  .cmd { color:var(--good); font-weight:600; }
+  .val { color:var(--accent); }
+  .warn { color:var(--warn); }
+  .err { color:var(--err); }
+  .step { display:flex; gap:12px; align-items:flex-start; margin:16px 0; }
+  .step-num { background:var(--accent); color:#000; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
+  .step-body { flex:1; }
+  .flow { display:flex; gap:8px; flex-wrap:wrap; align-items:center; font:13px/1.5 monospace; }
+  .flow span { background:var(--card); border:1px solid var(--border); padding:4px 10px; border-radius:4px; }
+  .flow .arrow { background:none; border:none; color:var(--dim); }
+  .tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; }
+  .tag-g { background:rgba(63,185,80,0.15); color:var(--good); }
+  .tag-r { background:rgba(248,81,73,0.15); color:var(--err); }
+  .tag-y { background:rgba(210,153,29,0.15); color:var(--warn); }
+</style>
+</head>
+<body>
+
+<h1>⚙️ 球平衡视觉PID 调参指南</h1>
+
+<div class="box">
+<h3 style="margin-top:0">系统链路</h3>
+<div class="flow">
+  <span>MaixCam</span><span class="arrow">→</span><span>UART2</span><span class="arrow">→</span><span>proto_rx</span><span class="arrow">→</span><span>VisionEstimator</span><span class="arrow">→</span><span>PID_UpdateWithDerivative</span><span class="arrow">→</span><span>CL_SetTargetAngle</span><span class="arrow">→</span><span>CL_Process</span><span class="arrow">→</span><span>步进电机</span>
+</div>
+<p style="margin-top:10px;color:var(--dim)">视觉 20Hz | PID 200Hz（D项直接喂滤波速度，不内部差分）| 输出 ±6° 限幅 + 80°/s 斜坡</p>
+</div>
+
+<h2>📋 UART0 命令速查</h2>
+<table>
+<tr><th>命令</th><th>功能</th><th>示例</th></tr>
+<tr><td class="cmd">V</td><td>启动视觉PID（sp=0cm）</td><td><code>V</code></td></tr>
+<tr><td class="cmd">W</td><td>停止视觉PID，回力学前馈</td><td><code>W</code></td></tr>
+<tr><td class="cmd">N &lt;cm&gt;</td><td>设目标位置</td><td><code>N 0</code> / <code>N 5</code> / <code>N -3</code></td></tr>
+<tr><td class="cmd">J &lt;val&gt;</td><td>设 KP (deg/cm)</td><td><code>J 0.8</code></td></tr>
+<tr><td class="cmd">M &lt;val&gt;</td><td>设 KD (deg/(cm/s))</td><td><code>M 0.25</code></td></tr>
+<tr><td class="cmd">I &lt;val&gt;</td><td>设 KI</td><td><code>I 0.05</code></td></tr>
+<tr><td class="cmd">S</td><td>查看状态（电机+视觉PID）</td><td><code>S</code></td></tr>
+<tr><td class="cmd">P</td><td>查看力学参数</td><td><code>P</code></td></tr>
+<tr><td class="cmd">A &lt;val&gt;</td><td>设加速度 m/s²</td><td><code>A 1.5</code></td></tr>
+<tr><td class="cmd">T &lt;val&gt;</td><td>设 trim 微调角 °</td><td><code>T 1.0</code></td></tr>
+<tr><td class="cmd">D &lt;val&gt;</td><td>手动倾角 °</td><td><code>D 3</code></td></tr>
+<tr><td class="cmd">X</td><td>紧急停止（需重启）</td><td><code>X</code></td></tr>
+</table>
+
+<h2>📊 参数表</h2>
+<table>
+<tr><th>参数</th><th>默认</th><th>含义</th><th>调大</th><th>调小</th></tr>
+<tr><td><code>VIS_KP</code></td><td class="val">0.8</td><td>位置增益 deg/cm</td><td>响应快、可能振荡</td><td>响应慢、不振荡</td></tr>
+<tr><td><code>VIS_KD</code></td><td class="val">0.25</td><td>速度阻尼 deg/(cm/s)</td><td>刹车强、过冲小</td><td>刹车弱、过冲大</td></tr>
+<tr><td><code>VIS_KI</code></td><td class="val">0.0</td><td>积分消除稳态误差</td><td>消除残余偏差</td><td>—</td></tr>
+<tr><td><code>VIS_VELOCITY_FILTER_ALPHA</code></td><td class="val">0.70</td><td>速度低通滤波</td><td>更平滑、略延迟</td><td>响应快、噪声大</td></tr>
+<tr><td><code>VIS_POSITION_DEADBAND_CM</code></td><td class="val">0.15</td><td>位置死区 cm</td><td>—</td><td>—</td></tr>
+<tr><td><code>VIS_VELOCITY_DEADBAND_CM_S</code></td><td class="val">1.0</td><td>速度死区 cm/s</td><td>—</td><td>—</td></tr>
+<tr><td><code>VIS_OUTPUT_MAX_DEG</code></td><td class="val">6.0</td><td>PID 输出限幅 °</td><td>—</td><td>—</td></tr>
+</table>
+<p style="color:var(--dim)">滤波系数和死区改 <code>demo_config.h</code> 需重新编译；Kp/Kd/Ki 用串口命令实时调。</p>
+
+<h2>🔄 调参流程</h2>
+
+<h3>准备</h3>
+<pre><code>1. 硬件上电（12V + USB-C × 2）
+2. 等待自动归零完成（PWM ≈ 143°，串口打印启动信息）
+3. 球放摆杆中间（约 0cm 位置）
+4. 确认 MaixCam 工作（镜头对准摆杆，能看到球）</code></pre>
+
+<div class="step"><div class="step-num">1</div><div class="step-body">
+<h3>关 D 关 I，找 P 临界值</h3>
+<pre><code>M 0          ← KD = 0
+I 0          ← KI = 0
+V            ← 启动 PID</code></pre>
+<p>从小到大试 KP，每次 <code>S</code> 观察球的行为：</p>
+<table>
+<tr><th>KP</th><th>现象</th><th>判断</th></tr>
+<tr><td class="val">0.3</td><td>球慢慢漂走，回不来</td><td><span class="tag tag-y">太小</span></td></tr>
+<tr><td class="val">0.6</td><td>球能回来，但很慢</td><td><span class="tag tag-y">还不够</span></td></tr>
+<tr><td class="val">0.9</td><td>球冲过头弹回去</td><td><span class="tag tag-y">接近了</span></td></tr>
+<tr><td class="val">1.2</td><td>球来回振荡，幅度不衰减</td><td><span class="tag tag-g">临界 KP</span></td></tr>
+<tr><td class="val">1.5</td><td>振荡更剧烈</td><td><span class="tag tag-r">超标了</span></td></tr>
+</table>
+<p><strong>记录：临界 KP = ___，振荡周期 Tu = ___ 秒</strong>（看 S 输出 ball 值摆动一次的时间）</p>
+</div></div>
+
+<div class="step"><div class="step-num">2</div><div class="step-body">
+<h3>回退 KP，加 KD 阻尼</h3>
+<pre><code>J <span class="val">0.7</span>        ← 临界 KP × 0.6（例如 1.2 × 0.6）
+M <span class="val">0.1</span>        ← 从小 KD 开始</code></pre>
+<table>
+<tr><th>现象</th><th>操作</th></tr>
+<tr><td>球过冲超过目标</td><td><code>M +0.1</code> 加大刹车</td></tr>
+<tr><td>球回来太慢、反应迟钝</td><td><code>M -0.05</code> 减小刹车</td></tr>
+<tr><td>球到中心附近轻微摆动后稳住</td><td><span class="tag tag-g">✅ 这组 KP/KD 可用</span></td></tr>
+</table>
+<p style="color:var(--dim)">经验公式：KD ≈ KP × Tu × 0.3 （Tu=0.5s 时 KD ≈ 0.18）</p>
+</div></div>
+
+<div class="step"><div class="step-num">3</div><div class="step-body">
+<h3>微调 KP + KD 组合</h3>
+<table>
+<tr><th>球的行为</th><th>问题</th><th>操作</th></tr>
+<tr><td>小幅持续摆动（高频）</td><td>KD 不够</td><td><code>M +0.05</code></td></tr>
+<tr><td>大幅缓慢摆动（低频）</td><td>KP 太大</td><td><code>J -0.2</code></td></tr>
+<tr><td>球偏一边回不到 0cm</td><td>KP 不够</td><td><code>J +0.1</code></td></tr>
+<tr><td>球反应迟钝</td><td>KP+KD 都大</td><td><code>J -0.2</code> <code>M -0.05</code></td></tr>
+</table>
+<p><strong>目标：球放中间松手后，2-3 秒内稳定在 ±3mm 以内。</strong></p>
+</div></div>
+
+<div class="step"><div class="step-num">4</div><div class="step-body">
+<h3>加积分（按需）</h3>
+<p>如果 PD 调好后球停在离 0cm 差 &gt;0.3cm 的位置：</p>
+<pre><code>I 0.02       ← 先加很小</code></pre>
+<table>
+<tr><th>现象</th><th>操作</th></tr>
+<tr><td>误差慢慢缩小，球到 0cm</td><td><span class="tag tag-g">✅ KI 合适</span></td></tr>
+<tr><td>缩小太慢</td><td><code>I 0.05</code></td></tr>
+<tr><td>出现小幅振荡</td><td><code>I 0</code> 放弃积分</td></tr>
+</table>
+<p style="color:var(--warn)">能不用就不用。PD 调好通常不需要 KI。</p>
+</div></div>
+
+<div class="step"><div class="step-num">5</div><div class="step-body">
+<h3>跨位置验证</h3>
+<pre><code>N 5          ← 目标移到 +5cm
+N 0          ← 回到中心
+N -3         ← 测试负方向</code></pre>
+<table>
+<tr><th>现象</th><th>操作</th></tr>
+<tr><td>过冲超过目标 0.5cm</td><td><code>M +0.1</code></td></tr>
+<tr><td>到不了目标（差 &gt;0.3cm）</td><td><code>J +0.2</code> 或 <code>I 0.03</code></td></tr>
+<tr><td>来回振荡几次才稳</td><td><code>M +0.05</code></td></tr>
+<tr><td>三个位置都顺利到位</td><td><span class="tag tag-g">✅ 调参完成</span></td></tr>
+</table>
+</div></div>
+
+<h2>🔧 典型问题</h2>
+<div class="box">
+<h3 style="margin-top:0">球完全不动 / 电机不转</h3>
+<p><code>S</code> 检查：</p>
+<ul>
+<li>PWM≈143 且 act=0 → 归零没完成，等</li>
+<li>valid=0 → MaixCam 没发数据，检查 UART2 接线和供电</li>
+<li>ball 值始终不变 → 检查摄像头是否对准、光照是否充足</li>
+</ul>
+</div>
+
+<div class="box">
+<h3 style="margin-top:0">球一启动就飞出去</h3>
+<p><code>X</code> 立刻急停 → <code>J 0.3</code> 重新开始</p>
+<ul>
+<li>KP 太大</li>
+<li>方向反了 → 检查 <code>AXIS_X_POSITIVE_DIR_LEVEL</code></li>
+<li>速度滤波太小 → 改 <code>VIS_VELOCITY_FILTER_ALPHA = 0.85</code></li>
+</ul>
+</div>
+
+<div class="box">
+<h3 style="margin-top:0">球在目标附近高频抖动</h3>
+<ul>
+<li>KD 不够 → <code>M +0.1</code></li>
+<li>视觉噪声大 → <code>VIS_VELOCITY_FILTER_ALPHA = 0.85</code>，<code>VIS_POSITION_DEADBAND_CM = 0.2</code></li>
+</ul>
+</div>
+
+<div class="box">
+<h3 style="margin-top:0">球稳定但位置有偏差</h3>
+<ul>
+<li>平台物理不平 → <code>T 0.5</code> 或 <code>T -0.5</code></li>
+<li>有稳态误差 → <code>I 0.03</code></li>
+</ul>
+</div>
+
+<h2>🎯 推荐参数</h2>
+<table>
+<tr><th>风格</th><th>KP</th><th>KD</th><th>KI</th><th>说明</th></tr>
+<tr><td><span class="tag tag-g">保守</span></td><td class="val">0.5</td><td class="val">0.2</td><td class="val">0</td><td>稳但慢，适合初次调试</td></tr>
+<tr><td><span class="tag tag-g">推荐</span></td><td class="val">0.8</td><td class="val">0.25</td><td class="val">0</td><td>速度和稳定性兼顾</td></tr>
+<tr><td><span class="tag tag-y">激进</span></td><td class="val">1.2</td><td class="val">0.35</td><td class="val">0.02</td><td>快但可能振荡</td></tr>
+</table>
+
+<h2>⚡ 一句话流程</h2>
+<div class="box">
+<div class="flow">
+  <span>上电</span><span class="arrow">→</span><span>等归零</span><span class="arrow">→</span><span>球放中间</span><span class="arrow">→</span><span>V</span><span class="arrow">→</span><span>M 0</span><span class="arrow">→</span><span>I 0</span><span class="arrow">→</span><span>J 0.3~1.5 找临界</span><span class="arrow">→</span><span>回退+加D</span><span class="arrow">→</span><span>N 5/N 0/N -3 验证</span>
+</div>
+<p style="margin-top:12px;text-align:center;font-size:16px;color:var(--accent)"><strong>KP 管力度 · KD 管刹车 · KI 管精准<br>先 KP+KD 调到稳，够用就不加 KI</strong></p>
+</div>
+
+</body>
+</html>

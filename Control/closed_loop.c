@@ -46,11 +46,11 @@ static float CL_CountToAngle(int32_t count)
 
 static uint32_t CL_SelectFrequency(uint32_t error)
 {
-    if (error > 800U) return 5000U;
-    if (error > 200U) return 3000U;
-    if (error > 50U) return 1500U;
-    if (error > 15U) return 800U;
-    return 600U;
+    if (error > 800U) return 8000U;
+    if (error > 200U) return 5000U;
+    if (error > 50U) return 2500U;
+    if (error > 15U) return 1200U;
+    return 800U;
 }
 
 static uint32_t CL_ErrorToSteps(uint32_t error)

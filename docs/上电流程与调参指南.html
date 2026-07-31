@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MS42CG 闭环步进电机 — 上电流程与调参指南</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d2991d;
+    --purple: #a371f7; --orange: #d18616;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6; padding: 20px; max-width: 1100px; margin: auto;
+  }
+  h1 { font-size: 2em; border-bottom: 2px solid var(--accent); padding-bottom: 12px; margin: 24px 0 16px; }
+  h2 { font-size: 1.5em; margin: 32px 0 12px; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h3 { font-size: 1.2em; margin: 20px 0 8px; color: var(--purple); }
+  h4 { font-size: 1.05em; margin: 14px 0 6px; color: var(--yellow); }
+  p, li { margin: 4px 0; }
+  ul, ol { padding-left: 24px; }
+  code { background: #1c2129; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; color: var(--orange); }
+  pre { background: #1c2129; padding: 14px 18px; border-radius: 8px; overflow-x: auto; font-size: 0.85em; line-height: 1.5; border: 1px solid var(--border); margin: 10px 0; }
+  pre code { background: none; padding: 0; color: var(--text); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+  th { background: #1c2129; font-weight: 600; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px; margin: 14px 0;
+  }
+  .note { background: #1a2332; border-left: 4px solid var(--accent); padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .warn { background: #2d1f1a; border-left: 4px solid var(--red); padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .tip  { background: #1e2d1a; border-left: 4px solid var(--green); padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .flow-step {
+    display: flex; align-items: flex-start; gap: 14px; padding: 8px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .flow-num {
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+    background: var(--accent); color: #000; font-weight: 700; font-size: 0.9em;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .flow-num.green { background: var(--green); }
+  .flow-num.yellow { background: var(--yellow); }
+  .flow-num.purple { background: var(--purple); }
+  .flow-body { flex: 1; }
+  .flow-body .title { font-weight: 600; }
+  .flow-body .detail { font-size: 0.9em; color: var(--muted); }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 600;
+  }
+  .tag-hw { background: #2d1f1a; color: var(--red); }
+  .tag-sw { background: #1a2332; color: var(--accent); }
+  .tag-cfg { background: #2a2416; color: var(--yellow); }
+  .toc { background: var(--card); border-radius: 10px; padding: 16px 20px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ul { list-style: none; padding-left: 0; }
+  .toc li { padding: 3px 0; }
+  .param-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .param-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>🔄 MS42CG + D36A 闭环步进电机<br><small style="color:var(--muted)">上电启动流程 &amp; 调参指南</small></h1>
+
+<div class="toc">
+  <h3 style="margin-top:0">📑 目录</h3>
+  <ul>
+    <li><a href="#arch">1. 系统架构总览</a></li>
+    <li><a href="#boot">2. 上电启动流程（逐阶段）</a></li>
+    <li><a href="#homing">3. 自动回零标定（Homing）</a></li>
+    <li><a href="#states">4. 运行状态机</a></li>
+    <li><a href="#serials">5. 串口通信协议</a></li>
+    <li><a href="#params">6. 调参手册</a></li>
+    <li><a href="#tuning-guide">7. 调参流程（推荐步骤）</a></li>
+    <li><a href="#trouble">8. 常见故障排查</a></li>
+  </ul>
+</div>
+
+<!-- ===================== 1. 系统架构 ===================== -->
+<h2 id="arch">1. 系统架构总览</h2>
+
+<div class="card">
+  <h4>硬件模块关系</h4>
+  <pre><code>┌────────────────────────────────────────────────────────────┐
+│                    天猛星 MSPM0G3507                        │
+│                                                            │
+│  ┌──────────┐  ┌──────────┐  ┌───────────┐                │
+│  │ TIMG8 QEI│  │ TIMG12   │  │ TIMA1 PWM │                │
+│  │ (A/B编码)│  │ (PWM捕获)│  │ (STEP脉冲)│                │
+│  └────┬─────┘  └────┬─────┘  └─────┬─────┘                │
+│       │read angle   │read abs      │generate               │
+│  ┌────▼─────────────▼─────┐  ┌────▼──────────────────┐    │
+│  │     Encoder 模块        │  │    Motor 模块           │    │
+│  │  • A/B 增量 (4000/rev) │  │  • STEP 脉冲生成        │    │
+│  │  • PWM 绝对角度 (0-360)│  │  • DIR 方向控制         │    │
+│  │  • Z 索引计数          │  │  • EN 使能/锁轴         │    │
+│  └───────────┬────────────┘  └───────────┬────────────┘    │
+│              │                           │                  │
+│  ┌───────────▼───────────────────────────▼────────────┐    │
+│  │              Closed-Loop 闭环控制                     │    │
+│  │  • 位置误差 → 步数/频率自适应 → Motor_Start()         │    │
+│  │  • 到位检测 (3周期稳定)  • 方向/丢编码器故障          │    │
+│  └──────────────────────┬──────────────────────────────┘    │
+│                         │                                    │
+│  ┌──────────────────────▼──────────────────────────────┐    │
+│  │              上层控制 (DEMO_SELECT)                    │    │
+│  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │    │
+│  │  │ BallControl  │ │ MechBalance  │ │  TaskCtrl    │ │    │
+│  │  │ • 自动回零   │ │ • 力学前馈   │ │  • AA55协议  │ │    │
+│  │  │ • 球PID闭环  │ │ • 视觉PID    │ │  • 赛题状态机 │ │    │
+│  │  │ (DEMO5)      │ │ (DEMO7/8)    │ │  • 轨迹生成   │ │    │
+│  │  └──────────────┘ └──────────────┘ └──────────────┘ │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                                                            │
+│  串口资源:                                                  │
+│  UART0 (PA28/PA31) → PC 调试, 115200-8-N-1                  │
+│  UART1 (PA17/PA18) → 主控 AA55 协议, 115200-8-N-1             │
+│  UART2 (PA21/PA22) → MaixCam 视觉数据, 115200-8-N-1           │
+└────────────────────────────────────────────────────────────┘</code></pre>
+</div>
+
+<div class="card">
+  <h4>文件模块清单</h4>
+  <table>
+    <tr><th>文件</th><th>职责</th><th>层</th></tr>
+    <tr><td><code>empty.c</code></td><td>main() 入口, 初始化顺序, 5ms ISR</td><td><span class="tag tag-sw">应用</span></td></tr>
+    <tr><td><code>Hardware/board.c</code></td><td>LED, SysTick 延时, printf 重定向 UART0</td><td><span class="tag tag-hw">硬件</span></td></tr>
+    <tr><td><code>Hardware/motor.c</code></td><td>D36A STEP/DIR/EN 控制, TIMA1 硬件 PWM</td><td><span class="tag tag-hw">硬件</span></td></tr>
+    <tr><td><code>Hardware/encoder.c</code></td><td>TIMG8 QEI A/B, TIMG12 PWM 捕获, Z 中断</td><td><span class="tag tag-hw">硬件</span></td></tr>
+    <tr><td><code>Hardware/proto_rx.c</code></td><td>UART2 视觉数据 AA55 解析</td><td><span class="tag tag-hw">硬件</span></td></tr>
+    <tr><td><code>Control/closed_loop.c</code></td><td>闭环位置控制, 步频自适应, 故障检测</td><td><span class="tag tag-sw">控制</span></td></tr>
+    <tr><td><code>Control/pid.c</code></td><td>通用 PID 控制器</td><td><span class="tag tag-sw">控制</span></td></tr>
+    <tr><td><code>Control/ball_control.c</code></td><td>回零状态机, DEMO5 球 PID 闭环</td><td><span class="tag tag-sw">控制</span></td></tr>
+    <tr><td><code>Control/mech_balance.c</code></td><td>力学前馈 + 视觉 PID (DEMO7/8)</td><td><span class="tag tag-sw">控制</span></td></tr>
+    <tr><td><code>Control/task_ctrl.c</code></td><td>赛题状态机, AA55 命令/状态上报</td><td><span class="tag tag-sw">控制</span></td></tr>
+    <tr><td><code>Control/app_demo.c</code></td><td>Demo 入口, 串口命令解析 (A/G/B/T/N/J/M/I…)</td><td><span class="tag tag-sw">应用</span></td></tr>
+    <tr><td><code>Hardware/demo_config.h</code></td><td>所有可调参数宏定义</td><td><span class="tag tag-cfg">配置</span></td></tr>
+    <tr><td><code>Hardware/nvm.c</code></td><td>Flash 非易失存储 (零点保存/恢复)</td><td><span class="tag tag-hw">硬件</span></td></tr>
+  </table>
+</div>
+
+<!-- ===================== 2. 启动流程 ===================== -->
+<h2 id="boot">2. 上电启动流程</h2>
+
+<div class="card">
+  <h3>2.1 main() 启动序列</h3>
+
+  <div class="flow-step">
+    <div class="flow-num">1</div>
+    <div class="flow-body">
+      <div class="title"><span class="tag tag-hw">硬件</span> SYSCFG_DL_init() — 系统时钟 + GPIO 初始化</div>
+      <div class="detail">SysConfig 生成的代码：配置 80MHz 主频、所有引脚复用、UART/TIMER 外设时钟。这是上电后执行的第一条语句。</div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num">2</div>
+    <div class="flow-body">
+      <div class="title"><span class="tag tag-hw">硬件</span> Board_LED_Init() — 板载 LED 亮起</div>
+      <div class="detail">PB22 推挽输出，点亮 LED 表示 MCU 已启动。如果 LED 不亮：检查供电、复位电路。</div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num">3</div>
+    <div class="flow-body">
+      <div class="title"><span class="tag tag-hw">硬件</span> Motor_Init() — 电机驱动器初始化</div>
+      <div class="detail">
+        EN 引脚拉高 → 锁轴（电机上电即锁定，防止自由转动）<br>
+        DIR 引脚拉低 → 默认方向<br>
+        STEP 引脚低电平<br>
+        配置 TIMA1 硬件 PWM 用于 STEP 脉冲生成，使能中断
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num">4</div>
+    <div class="flow-body">
+      <div class="title"><span class="tag tag-hw">硬件</span> Encoder_Init() — 编码器初始化</div>
+      <div class="detail">
+        TIMG8 QEI 模式：A/B 正交解码 (4000 counts/rev)<br>
+        TIMG12 捕获模式：PWM 绝对角度测量 (MT6816 协议)<br>
+        Z 索引中断使能 (PA25)<br>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num green">5</div>
+    <div class="flow-body">
+      <div class="title"><span class="tag tag-hw">硬件</span> UART 中断使能</div>
+      <div class="detail">
+        UART2 (视觉) RX 中断 — 接收 MaixCam 球位置数据<br>
+        UART1 (主控) RX 中断 — 接收主控 AA55 命令
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num green">6</div>
+    <div class="flow-body">
+      <div class="title"><span class="tag tag-sw">应用</span> Demo_Init() — 应用层初始化</div>
+      <div class="detail" style="margin-top:6px">
+        <strong>执行顺序：</strong>
+        <ol>
+          <li><code>ProtoRx_Init()</code> — 视觉数据协议解析器复位</li>
+          <li><code>TaskCtrl_Init()</code> — 赛题状态机复位，UART1 中断使能</li>
+          <li><code>CL_Init()</code> — 闭环控制器复位，编码器零点归零</li>
+          <li>(DEMO5/7/8) <code>BallControl_Init()</code> — 回零状态机进入 HC_INIT</li>
+          <li>(DEMO7/8) <code>MechBalance_Init()</code> — 力学参数/视觉PID初始化</li>
+          <li>打印启动横幅 (模式号、细分、串口信息)</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num yellow">7</div>
+    <div class="flow-body">
+      <div class="title"><span class="tag tag-hw">硬件</span> TIMER 中断使能</div>
+      <div class="detail">
+        TIMG0 配置为 5ms 周期中断 → 进入主循环前最后一步<br>
+        使能后立即开始 5ms 定时调度
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-step">
+    <div class="flow-num purple">8</div>
+    <div class="flow-body">
+      <div class="title"><span class="tag tag-sw">应用</span> while(1) Demo_Process() — 主循环</div>
+      <div class="detail">
+        轮询 UART0 调试串口 → 解析串口命令<br>
+        各 Demo 模式的具体逻辑在主循环中执行
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>2.2 5ms 中断调度 (TIMER_0_INST_IRQHandler)</h3>
+  <p>每 5ms 触发一次，是系统的"心跳"，执行顺序固定：</p>
+
+  <table>
+    <tr><th>DEMO 模式</th><th>调度顺序</th></tr>
+    <tr>
+      <td>DEMO 5<br>(平衡球)</td>
+      <td>
+        <code>Encoder_Tick(5)</code> → 读取 QEI 增量、更新 PWM 超时<br>
+        <code>ProtoRx_Tick(5)</code> → 视觉数据超时计数<br>
+        <code>TaskCtrl_Tick5ms()</code> → 赛题状态机、轨迹、超时检测<br>
+        <code>BallControl_Tick5ms()</code> → 回零 + 球 PID 闭环<br>
+        <code>CL_Process()</code> ×4 → 电机闭环步进（4 次加速收敛）
+      </td>
+    </tr>
+    <tr>
+      <td>DEMO 8<br>(视觉PID)</td>
+      <td>
+        <code>Encoder_Tick(5)</code><br>
+        <code>ProtoRx_Tick(5)</code><br>
+        <code>BallControl_Tick5ms()</code> → 回零状态机<br>
+        <code>MechBalance_Tick5ms()</code> → 视觉PID / 力学前馈 / 手动倾角<br>
+        <code>CL_Process()</code> ×1 → 仅回零期间执行；回零完成后不执行
+      </td>
+    </tr>
+    <tr>
+      <td>DEMO 7<br>(纯力学)</td>
+      <td>
+        <code>BallControl_Tick5ms()</code><br>
+        <code>MechBalance_Tick5ms()</code> → 力学前馈 / 手动倾角<br>
+        <code>CL_Process()</code> ×4
+      </td>
+    </tr>
+    <tr>
+      <td>DEMO 3/4</td>
+      <td><code>CL_Process()</code> ×1</td>
+    </tr>
+  </table>
+
+  <div class="warn">
+    <strong>⚠️ 注意：</strong>DEMO8 在回零期间 CL_Process 只执行 1 次/5ms（电机慢速转动）；
+    回零完成后 CL_Process 不再被调用，电机目标角度通过 <code>CL_SetTargetAngle()</code> 直接设置，
+    闭环控制器在 <code>CL_SetTargetAngle</code> 内部立即启动步进。
+  </div>
+</div>
+
+<div class="card">
+  <h3>2.3 DEMO8 完整启动时间线</h3>
+  <table>
+    <tr><th>时间</th><th>阶段</th><th>状态</th><th>关键事件</th></tr>
+    <tr>
+      <td>0 ms</td><td>上电</td><td>硬件初始化</td>
+      <td>SYSCFG → LED 亮 → Motor EN 拉高锁轴 → Encoder 启动</td>
+    </tr>
+    <tr>
+      <td>~10 ms</td><td>应用初始化</td><td>Demo_Init()</td>
+      <td>协议解析器/状态机/闭环/PID/回零状态机 全部就绪</td>
+    </tr>
+    <tr>
+      <td>~15 ms</td><td>进入主循环</td><td>等待 PWM</td>
+      <td>5ms 中断开始运行，回零状态机进入 HC_WAIT</td>
+    </tr>
+    <tr>
+      <td>0–3 s</td><td>等待 PWM 信号</td><td>HC_WAIT</td>
+      <td>等待 MT6816 输出稳定的 PWM 绝对角度<br>超时 3s → HC_FAULT</td>
+    </tr>
+    <tr>
+      <td>3–18 s</td><td>回零运动</td><td>HC_SEEK</td>
+      <td>电机以 100Hz 连续转动，实时读取 PWM 角度<br>当 PWM ∈ [PWM_HORIZONTAL_REF ± TOL] → HC_READY<br>超时 15s 或 1.5s 无进展 → HC_FAULT</td>
+    </tr>
+    <tr>
+      <td>~完成</td><td>回零完成</td><td>HC_READY</td>
+      <td>电机停止，编码器零点设为当前位置<br>串口打印横幅，等待用户/主控指令</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===================== 3. 回零 ===================== -->
+<h2 id="homing">3. 自动回零标定 (Homing)</h2>
+
+<div class="card">
+  <h3>3.1 回零状态机</h3>
+  <pre><code>                    ┌─────────┐
+          上电 ───→ │ HC_INIT │
+                    └────┬────┘
+                         ↓
+                    ┌─────────┐    3秒无PWM
+                    │ HC_WAIT │────────────→ HC_FAULT
+                    └────┬────┘
+                         ↓ PWM信号到达
+              ┌──────────────────────┐
+              │ PWM ≈ REF ± TOL ?     │
+              └────┬──────┬──────────┘
+              是   ↓      ↓ 否
+           HC_READY   ┌─────────┐
+                      │ HC_SEEK │──→ 超时/无进展 → HC_FAULT
+                      └────┬────┘
+                           ↓ PWM ≈ REF
+                        HC_READY</code></pre>
+
+  <h4>相关配置参数 (demo_config.h)</h4>
+  <table>
+    <tr><th>参数</th><th>默认值</th><th>说明</th></tr>
+    <tr><td><code>PWM_HORIZONTAL_REF</code></td><td>143.0°</td><td>摆杆水平时 PWM 绝对角度（赛前调水平后读 PWM 填入）</td></tr>
+    <tr><td><code>PWM_HORIZONTAL_TOL</code></td><td>1.0°</td><td>判断水平的容差</td></tr>
+    <tr><td><code>HOMING_FREQ_HZ</code></td><td>100 Hz</td><td>回零时电机转动频率（低速）</td></tr>
+    <tr><td><code>HOMING_WAIT_TIMEOUT_MS</code></td><td>3000 ms</td><td>等待 PWM 信号的最长时间</td></tr>
+    <tr><td><code>HOMING_MOVE_TIMEOUT_MS</code></td><td>15000 ms</td><td>连续回零运动最长时间</td></tr>
+    <tr><td><code>HOMING_PWM_LOSS_TIMEOUT_MS</code></td><td>150 ms</td><td>运动中 PWM 丢失容忍</td></tr>
+    <tr><td><code>HOMING_NO_PROGRESS_MS</code></td><td>1500 ms</td><td>未向水平点靠近时的停机超时</td></tr>
+  </table>
+
+  <div class="tip">
+    <strong>💡 赛前操作：</strong>手动将摆杆调至水平 → 串口发送 <code>S</code> 查看 PWM 值 →
+    将读取值填入 <code>PWM_HORIZONTAL_REF</code> → 重新编译烧录。<br>
+    比赛现场上电后自动完成回零，无需电脑。
+  </div>
+</div>
+
+<!-- ===================== 4. 状态机 ===================== -->
+<h2 id="states">4. 运行状态机</h2>
+
+<div class="card">
+  <h3>4.1 赛题状态 (TaskCtrl)</h3>
+  <table>
+    <tr><th>状态</th><th>值</th><th>说明</th></tr>
+    <tr><td>STATE_IDLE</td><td>0</td><td>空闲，等待切换赛题/开始命令</td></tr>
+    <tr><td>STATE_RUNNING</td><td>1</td><td>运行中，PID 控制激活</td></tr>
+    <tr><td>STATE_DONE</td><td>2</td><td>完成（第3题球稳定在目标±1cm达500ms）</td></tr>
+    <tr><td>STATE_FAULT</td><td>3</td><td>故障（主控断连超2.5s / 编码器故障 / 驱动器故障）</td></tr>
+  </table>
+
+  <h4>赛题模式 (task_id)</h4>
+  <table>
+    <tr><th>赛题</th><th>行为</th><th>视觉PID</th></tr>
+    <tr><td>TASK 3</td><td>自动轨迹 O→+5cm→O→-5cm (5秒)</td><td>否</td></tr>
+    <tr><td>TASK 4</td><td>PID 平衡控制，setpoint=0cm，小车跑AB段(8s)</td><td>是 (DEMO8)</td></tr>
+    <tr><td>TASK 5</td><td>PID 平衡控制，setpoint=0cm/可设，跑一圈(30s)</td><td>是 (DEMO8)</td></tr>
+    <tr><td>TASK 6</td><td>PID 平衡控制，setpoint=指定位置，跑一圈(30s)</td><td>是 (DEMO8)</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h3>4.2 DEMO8 控制模式优先级</h3>
+  <p>在 5ms 中断中，<code>MechBalance_Tick5ms()</code> 按以下优先级选择输出：</p>
+  <ol>
+    <li><strong>紧急停止</strong> — 串口 <code>X</code> 触发，永久锁死，需重启</li>
+    <li><strong>视觉 PID</strong> — 串口 <code>V</code> 启动 / <code>W</code> 停止<br>
+        <span style="color:var(--muted)">球丢失 → 保持当前角度不退出；PWM越界 → 钳位不退出；仅X/断电可退出</span></li>
+    <li><strong>手动倾角</strong> — 串口 <code>D &lt;角度&gt;</code> 设定</li>
+    <li><strong>力学前馈</strong> — 默认模式，根据加速度计算倾角补偿<br>
+        <span style="color:var(--muted)">θ = atan2(-gain·ax, g) × 57.3° - pitch + trim</span></li>
+  </ol>
+</div>
+
+<!-- ===================== 5. 串口协议 ===================== -->
+<h2 id="serials">5. 串口通信协议</h2>
+
+<div class="card">
+  <h3>5.1 调试串口命令 (UART0, DEMO8)</h3>
+  <p>通过 USB-TTL 连接 PC，115200-8-N-1，回车执行。</p>
+
+  <table>
+    <tr><th>命令</th><th>参数</th><th>功能</th><th>运行时可调</th></tr>
+    <tr><td><code>V</code></td><td>无</td><td>启动视觉 PID 控制</td><td>—</td></tr>
+    <tr><td><code>W</code></td><td>无</td><td>停止视觉 PID（退出到默认力学前馈）</td><td>—</td></tr>
+    <tr><td><code>N &lt;cm&gt;</code></td><td>目标位置 cm</td><td>设置视觉 PID 目标位置 (±9cm)</td><td>✅</td></tr>
+    <tr><td><code>J &lt;值&gt;</code></td><td>KP</td><td>设置视觉 PID 比例增益 (deg/cm)</td><td>✅</td></tr>
+    <tr><td><code>M &lt;值&gt;</code></td><td>KD</td><td>设置视觉 PID 微分增益 (deg/(cm/s))</td><td>✅</td></tr>
+    <tr><td><code>I &lt;值&gt;</code></td><td>KI</td><td>设置视觉 PID 积分增益</td><td>✅</td></tr>
+    <tr><td><code>S</code></td><td>无</td><td>查询状态（目标角/实际角/PWM/球位置/速度）</td><td>—</td></tr>
+    <tr><td><code>P</code></td><td>无</td><td>打印力学参数 (g, fwd, brk, trim, rate)</td><td>—</td></tr>
+    <tr><td><code>A &lt;值&gt;</code></td><td>加速度 m/s²</td><td>设加速度值 (力学前馈)</td><td>✅</td></tr>
+    <tr><td><code>G &lt;值&gt;</code></td><td>增益</td><td>设前进加速度增益</td><td>✅</td></tr>
+    <tr><td><code>B &lt;值&gt;</code></td><td>增益</td><td>设刹车加速度增益</td><td>✅</td></tr>
+    <tr><td><code>T &lt;值&gt;</code></td><td>角度°</td><td>设倾角 trim</td><td>✅</td></tr>
+    <tr><td><code>L / R &lt;值&gt;</code></td><td>°/s</td><td>设角度变化速率限制</td><td>✅</td></tr>
+    <tr><td><code>D &lt;角度&gt;</code></td><td>°</td><td>直接指定电机角度</td><td>✅</td></tr>
+    <tr><td><code>X</code></td><td>无</td><td>紧急停止（永久锁死，需重启恢复）</td><td>—</td></tr>
+  </table>
+
+  <div class="note">
+    <strong>ℹ️ 命令格式说明：</strong>命令不区分大小写。字母 + 空格 + 数值 + 回车。例如：<code>N 3.5</code> 设置目标 3.5cm，<code>J 0.8</code> 设置 KP=0.8。参数为整数时可不带小数点：<code>L 80</code>。
+  </div>
+</div>
+
+<div class="card">
+  <h3>5.2 主控 AA55 协议 (UART1)</h3>
+  <table>
+    <tr><th>方向</th><th>TYPE</th><th>说明</th></tr>
+    <tr><td>主控 → 本机</td><td>0x40 (TASK_CMD)</td><td>切换赛题/开始/停止/设目标位置</td></tr>
+    <tr><td>本机 → 主控</td><td>0x41 (TASK_STATE)</td><td>每100ms上报：赛题/状态/球位置/角度</td></tr>
+    <tr><td>双向</td><td>0xFF</td><td>心跳包 1Hz</td></tr>
+  </table>
+</div>
+
+<!-- ===================== 6. 调参手册 ===================== -->
+<h2 id="params">6. 调参手册</h2>
+
+<div class="card">
+  <h3>6.1 demo_config.h 全部参数速查</h3>
+
+  <h4>🔧 模式选择</h4>
+  <table>
+    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
+    <tr><td><code>DEMO_SELECT</code></td><td>8</td><td>1=开环 2=编码器 3=闭环自动 4=串口指令 5=平衡球 7=力学 8=视觉PID</td></tr>
+  </table>
+
+  <h4>⚙️ 电机机械限制</h4>
+  <table>
+    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
+    <tr><td><code>MOTOR_MAX_ANGLE_POS</code></td><td>50.0°</td><td>电机正向最大角度</td></tr>
+    <tr><td><code>MOTOR_MAX_ANGLE_NEG</code></td><td>35.0°</td><td>电机反向最大角度</td></tr>
+    <tr><td><code>PWM_LIMIT_HIGH</code></td><td>190.0°</td><td>PWM 正极限角度 (+50°电机)</td></tr>
+    <tr><td><code>PWM_LIMIT_LOW</code></td><td>105.0°</td><td>PWM 负极限角度 (-35°电机)</td></tr>
+    <tr><td><code>PWM_LIMIT_MARGIN</code></td><td>2.0°</td><td>限位保护余量</td></tr>
+  </table>
+
+  <h4>🎯 视觉 PID 参数 (DEMO8 核心)</h4>
+  <table>
+    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
+    <tr><td><code>VIS_KP</code></td><td>0.8</td><td>位置比例增益 (deg/cm) — 球偏移 1cm → 电机倾角变化 KP 度</td></tr>
+    <tr><td><code>VIS_KD</code></td><td>0.25</td><td>速度微分增益 (deg/(cm/s)) — 抑制球速度变化，阻尼振荡</td></tr>
+    <tr><td><code>VIS_KI</code></td><td>0.0</td><td>积分增益 — 消除稳态误差，通常先置 0</td></tr>
+    <tr><td><code>VIS_INTEGRAL_LIMIT</code></td><td>10.0</td><td>积分限幅</td></tr>
+    <tr><td><code>VIS_OUTPUT_MIN_DEG</code></td><td>-6.0°</td><td>PID 输出下限（相对 trim 的偏移量）</td></tr>
+    <tr><td><code>VIS_OUTPUT_MAX_DEG</code></td><td>6.0°</td><td>PID 输出上限</td></tr>
+    <tr><td><code>VIS_SETPOINT_CM</code></td><td>0.0 cm</td><td>默认目标位置（第4问默认 0cm）</td></tr>
+    <tr><td><code>VIS_SETPOINT_LIMIT_CM</code></td><td>9.0 cm</td><td>目标位置软限幅</td></tr>
+    <tr><td><code>VIS_VELOCITY_FILTER_ALPHA</code></td><td>0.70</td><td>速度低通滤波系数（0=无滤波, 1=完全平滑）</td></tr>
+    <tr><td><code>VIS_POSITION_DEADBAND_CM</code></td><td>0.15 cm</td><td>位置死区：误差小于此值暂停 PID 更新</td></tr>
+    <tr><td><code>VIS_VELOCITY_DEADBAND_CM_S</code></td><td>1.0 cm/s</td><td>速度死区：速度低于此值暂停 PID 更新</td></tr>
+  </table>
+
+  <h4>🏐 球 PID 参数 (DEMO5 用)</h4>
+  <table>
+    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
+    <tr><td><code>BALL_KP</code></td><td>4.0</td><td>球 PID 比例增益</td></tr>
+    <tr><td><code>BALL_KI</code></td><td>0.0</td><td>球 PID 积分增益</td></tr>
+    <tr><td><code>BALL_KD</code></td><td>5.0</td><td>球 PID 微分增益</td></tr>
+    <tr><td><code>PID_INTEGRAL_LIMIT</code></td><td>10.0</td><td>球 PID 积分限幅</td></tr>
+  </table>
+
+  <h4>📐 力学前馈参数 (DEMO7/8 共用)</h4>
+  <table>
+    <tr><th>参数 (MechParams_t 成员)</th><th>默认</th><th>串口命令</th><th>说明</th></tr>
+    <tr><td><code>gravity</code></td><td>9.80665</td><td>—</td><td>重力加速度 (m/s²)</td></tr>
+    <tr><td><code>accel_gain_fwd</code></td><td>1.0</td><td><code>G</code></td><td>前进加速度增益</td></tr>
+    <tr><td><code>accel_gain_brake</code></td><td>1.0</td><td><code>B</code></td><td>刹车加速度增益</td></tr>
+    <tr><td><code>accel_bias</code></td><td>0.0</td><td>—</td><td>加速度偏置</td></tr>
+    <tr><td><code>theta_trim_deg</code></td><td>0.0°</td><td><code>T</code></td><td>倾角零偏修正（摆杆不正时的补偿）</td></tr>
+    <tr><td><code>theta_rate_limit</code></td><td>80.0°/s</td><td><code>L/R</code></td><td>角度斜坡变化率限制（保护电机）</td></tr>
+    <tr><td><code>pitch_deg</code></td><td>0.0°</td><td>—</td><td>台面俯仰补偿</td></tr>
+  </table>
+
+  <h4>🔄 闭环控制参数</h4>
+  <table>
+    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
+    <tr><td><code>CL_PERIOD_MS</code></td><td>5 ms</td><td>闭环控制周期（即 5ms 中断周期）</td></tr>
+    <tr><td><code>CL_TOLERANCE_COUNTS</code></td><td>2 counts</td><td>到位容差 (2/4000×360°=0.18°)</td></tr>
+  </table>
+
+  <h4>🔌 编码器/方向</h4>
+  <table>
+    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
+    <tr><td><code>ENCODER_COUNTS_PER_REV</code></td><td>4000</td><td>编码器每圈计数 (A/B 1000线×4倍频)</td></tr>
+    <tr><td><code>ENCODER_AXIS_X_SIGN</code></td><td>1</td><td>编码器方向符号，-1=反转</td></tr>
+    <tr><td><code>AXIS_X_POSITIVE_DIR_LEVEL</code></td><td>1</td><td>电机正向时 DIR 电平，0/1 反转方向</td></tr>
+    <tr><td><code>AXIS_Y_POSITIVE_DIR_LEVEL</code></td><td>1</td><td>Y轴（未使用）</td></tr>
+    <tr><td><code>D36A_MICROSTEP</code></td><td>16</td><td>细分 (motor.h)，必须与 D36A 拨码一致</td></tr>
+  </table>
+
+  <h4>⏱️ DEMO1/2/3 测试参数</h4>
+  <table>
+    <tr><th>参数</th><th>默认</th><th>说明</th></tr>
+    <tr><td><code>DEMO1_STEPS</code></td><td>800</td><td>开环测试步数</td></tr>
+    <tr><td><code>DEMO1_FREQ_HZ</code></td><td>800</td><td>开环测试频率</td></tr>
+    <tr><td><code>DEMO2_FREQ_HZ</code></td><td>800</td><td>编码器测试频率</td></tr>
+    <tr><td><code>DEMO3_TARGET_DEG</code></td><td>5.0°</td><td>闭环自动测试角度</td></tr>
+    <tr><td><code>DEMO3_SWITCH_MS</code></td><td>4000</td><td>闭环自动切换间隔</td></tr>
+  </table>
+</div>
+
+<!-- ===================== 7. 调参流程 ===================== -->
+<h2 id="tuning-guide">7. 调参流程（推荐步骤）</h2>
+
+<div class="card">
+  <h3>7.1 赛前准备</h3>
+  <ol>
+    <li><strong>确认接线</strong>：对照 empty.c 头部接线表检查所有连接</li>
+    <li><strong>确认 D36A 拨码</strong>：MS1/2/3=OFF(16细分)，与 <code>D36A_MICROSTEP=16</code> 一致</li>
+    <li><strong>确认编码器方向</strong>：
+      <ul>
+        <li>烧录 DEMO 2 → 串口发 <code>1</code> 让电机正转</li>
+        <li>观察编码器读数是否递增 → 若递减则改 <code>ENCODER_AXIS_X_SIGN = -1</code></li>
+      </ul>
+    </li>
+    <li><strong>确认电机方向</strong>：
+      <ul>
+        <li>烧录 DEMO 2 → 串口发 <code>1</code> 看电机旋转方向</li>
+        <li>若正转方向反了 → 改 <code>AXIS_X_POSITIVE_DIR_LEVEL = 0</code>（或 1→0）</li>
+      </ul>
+    </li>
+    <li><strong>标定水平 PWM</strong>：
+      <ul>
+        <li>手动将摆杆调至水平</li>
+        <li>烧录 DEMO 2 → 串口发 <code>2</code> 启动连续转动 → 读取 PWM 值</li>
+        <li>将稳定值填入 <code>PWM_HORIZONTAL_REF</code></li>
+      </ul>
+    </li>
+    <li><strong>标定机械限位</strong>：
+      <ul>
+        <li>手动将摆杆推到正向极限 → 记录 PWM 值 → 填入 <code>PWM_LIMIT_HIGH</code></li>
+        <li>手动将摆杆推到反向极限 → 记录 PWM 值 → 填入 <code>PWM_LIMIT_LOW</code></li>
+      </ul>
+    </li>
+  </ol>
+</div>
+
+<div class="card">
+  <h3>7.2 视觉 PID 调参 (DEMO8)</h3>
+
+  <div class="note">
+    <strong>调参原则：</strong>先 KP 后 KD，KI 通常置 0。运行中通过串口 <code>J/M/I</code> 命令实时修改，
+    观察 <code>S</code> 命令输出判断效果。调好后将最终值写入 <code>demo_config.h</code> 重新编译。
+  </div>
+
+  <h4>第一步：调 KP (比例增益)</h4>
+  <ol>
+    <li>上电等待回零完成 → 串口发 <code>V</code> 启动视觉 PID</li>
+    <li>发 <code>N 0</code> 设目标位置 0cm</li>
+    <li>将球放在 +3cm 处，观察它是否回到 0cm
+      <ul>
+        <li>球回得太慢 → 增大 KP（如 <code>J 1.2</code>）</li>
+        <li>球冲过 0cm 振荡 → 减小 KP（如 <code>J 0.5</code>）</li>
+      </ul>
+    </li>
+    <li>反复调整直到球能从 ±3cm 快速回到 0cm 附近且不过冲太多</li>
+  </ol>
+
+  <h4>第二步：调 KD (微分增益 — 阻尼)</h4>
+  <ol>
+    <li>KP 确定后，球可能在 0cm 附近来回振荡</li>
+    <li>增大 KD 抑制振荡（如 <code>M 0.4</code>）
+      <ul>
+        <li>KD 太小 → 振荡不衰减</li>
+        <li>KD 太大 → 球响应变慢、迟钝</li>
+      </ul>
+    </li>
+    <li>目标：球快速回到 0cm 且无明显过冲振荡</li>
+  </ol>
+
+  <h4>第三步：调 KI (积分增益 — 消除静差，可选)</h4>
+  <ol>
+    <li>如果球稳定后始终偏离目标 0.2–0.5cm，可加小 KI</li>
+    <li>从很小值开始：<code>I 0.01</code>，观察是否改善</li>
+    <li>KI 过大 → 低频振荡，不易收敛</li>
+  </ol>
+
+  <h4>第四步：速度滤波调优</h4>
+  <ol>
+    <li><code>VIS_VELOCITY_FILTER_ALPHA</code>（需重新编译）：
+      <ul>
+        <li>视觉数据噪声大 → 增大 ALPHA（如 0.85），速度更平滑</li>
+        <li>响应太迟钝 → 减小 ALPHA（如 0.5），速度跟随更快</li>
+      </ul>
+    </li>
+    <li><code>VIS_POSITION_DEADBAND_CM</code>：球进入 ±0.15cm 内暂停 PID，避免微振</li>
+    <li><code>VIS_VELOCITY_DEADBAND_CM_S</code>：球速度 <1cm/s 时也暂停 PID</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h3>7.3 力学前馈调参 (DEMO7 预调)</h3>
+  <p>力学前馈是视觉 PID 的"基础层"。在没有视觉数据的 DEMO7 模式下调试：</p>
+  <ol>
+    <li>上电回零完成 → 串口发 <code>A 1.0</code> 模拟 1m/s² 加速度</li>
+    <li>观察电机倾角响应：
+      <ul>
+        <li>发 <code>S</code> 查看当前角度</li>
+        <li>如果需要更大倾角 → 增大 <code>G</code>（前进增益）</li>
+        <li>刹车时倾角不够 → 增大 <code>B</code>（刹车增益）</li>
+      </ul>
+    </li>
+    <li>摆杆机械零偏：发 <code>T 0.5</code> 微调 trim</li>
+    <li>角度变化速率：发 <code>L 60</code> 限制为 60°/s（保护电机）</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h3>7.4 典型参数组合参考</h3>
+  <table>
+    <tr><th>场景</th><th>KP</th><th>KD</th><th>KI</th><th>OUT_MIN/MAX</th><th>FILTER</th></tr>
+    <tr><td>保守（慢但稳）</td><td>0.5</td><td>0.3</td><td>0.0</td><td>±4°</td><td>0.85</td></tr>
+    <tr><td>默认</td><td>0.8</td><td>0.25</td><td>0.0</td><td>±6°</td><td>0.70</td></tr>
+    <tr><td>激进（快但可能振荡）</td><td>1.2</td><td>0.15</td><td>0.0</td><td>±8°</td><td>0.60</td></tr>
+    <tr><td>精密（加积分消静差）</td><td>0.8</td><td>0.3</td><td>0.02</td><td>±6°</td><td>0.75</td></tr>
+  </table>
+</div>
+
+<!-- ===================== 8. 故障排查 ===================== -->
+<h2 id="trouble">8. 常见故障排查</h2>
+
+<div class="card">
+  <table>
+    <tr><th>现象</th><th>可能原因</th><th>排查方法</th></tr>
+    <tr>
+      <td>上电 LED 不亮</td>
+      <td>供电异常 / MCU 未复位</td>
+      <td>检查 USB-C 供电、复位电路</td>
+    </tr>
+    <tr>
+      <td>电机不转、听到高频啸叫</td>
+      <td>EN 引脚未拉高（电机自由）或细分不匹配</td>
+      <td>检查 PA12→EN1 接线；确认拨码=16细分</td>
+    </tr>
+    <tr>
+      <td>编码器读数始终为 0</td>
+      <td>编码器供电 (3.3V!) / A/B 线接反 / QEI 未工作</td>
+      <td>DEMO2 下转动电机看读数；检查 PA0/PA1 接线</td>
+    </tr>
+    <tr>
+      <td>PWM 角度显示 N/A</td>
+      <td>编码器 PWM 线断开 / MT6816 无输出</td>
+      <td>检查 PB20→编码器 PWM 引脚；测编码器 VCC=3.3V</td>
+    </tr>
+    <tr>
+      <td>回零一直等待 (HC_WAIT)</td>
+      <td>PWM 信号超时未到达</td>
+      <td>检查编码器 PWM 线；确认编码器已上电</td>
+    </tr>
+    <tr>
+      <td>回零一直运动后报 FAULT</td>
+      <td>PWM_HORIZONTAL_REF 值不对 / 限位太小</td>
+      <td>重测水平 PWM 值；增大 HOMING_MOVE_TIMEOUT_MS</td>
+    </tr>
+    <tr>
+      <td>视觉 PID 启动后电机不动</td>
+      <td>回零未完成 (HC_READY=false) / 无视觉数据</td>
+      <td>串口 S 查看状态；确认 MaixCam 已上电并发送数据</td>
+    </tr>
+    <tr>
+      <td>球剧烈振荡</td>
+      <td>KP 过大 / KD 过小</td>
+      <td>减小 J 值、增大 M 值</td>
+    </tr>
+    <tr>
+      <td>球回不到目标位置（有静差）</td>
+      <td>KI=0 或摩擦力大 / trim 偏移</td>
+      <td>加小 KI (I 0.02)；微调 T trim 值</td>
+    </tr>
+    <tr>
+      <td>电机频繁启停、抖动</td>
+      <td>目标值波动 / 视觉数据噪声大</td>
+      <td>增大速度滤波 ALPHA；增大 deadband</td>
+    </tr>
+    <tr>
+      <td>主控发命令无响应</td>
+      <td>UART1 接线错误 / 波特率不对</td>
+      <td>确认 PA17→主控RX, PA18←主控TX, GND共地</td>
+    </tr>
+    <tr>
+      <td>串口乱码</td>
+      <td>波特率不匹配</td>
+      <td>确认所有串口均为 115200-8-N-1</td>
+    </tr>
+  </table>
+</div>
+
+<div class="card">
+  <h3>8.1 编译问题</h3>
+
+  <div class="note">
+    <strong>常见编译错误：</strong>Debug 目录下有 <code>- 副本</code> 文件夹 →
+    删除所有 <code>*- 副本</code> 目录和 <code>Debug/ccsObjs.opt</code> 等污染文件，
+    CCS Clean + Rebuild 即可。
+  </div>
+
+  <h4>必要的编译依赖</h4>
+  <ul>
+    <li>MSPM0 SDK 2.11.00.07 → <code>D:\APP\CCS\21.0.0\mspm0_sdk_2_11_00_07</code></li>
+    <li>SysConfig 1.28.0 → 生成 <code>ti_msp_dl_config.c/h</code></li>
+    <li>TI ARM Clang 5.1.1.LTS → 编译器</li>
+    <li>driverlib.a → <code>mspm0_sdk_2_11_00_07/source/ti/driverlib/lib/ticlang/m0p/mspm0g1x0x_g3x0x/driverlib.a</code></li>
+  </ul>
+</div>
+
+<hr style="border-color:var(--border);margin:32px 0">
+<p style="color:var(--muted);text-align:center;font-size:0.85em">
+  MSPM0G3507 + MS42CG + D36A 闭环步进电机系统 · 上电流程与调参指南 · 2026-07-31
+</p>
+
+</body>
+</html>
