@@ -303,7 +303,17 @@ static void Demo_PollUart(void)
 #else
         /* 模式5(平衡球)下调试串口入口 */
         TaskCtrl_FeedByte((uint8_t)ch);
-        if (ch == 'X' || ch == 'x') {
+        if (ch == 'V' || ch == 'v') {
+            /* V键: 强制启动PID, 无论如何不退出, 直到收到T键 */
+            BallControl_ForceStart();
+            uart_puts("[V] Force PID started (send T to stop)\r\n");
+        } else if (ch == 'T' || ch == 't') {
+            /* T键: 强制停止PID, 退出强制模式 */
+            BallControl_ForceStop();
+            uart_puts("[T] Force PID stopped\r\n");
+        } else if (ch == 'X' || ch == 'x') {
+            /* X键: 紧急停止 (同时退出强制PID模式) */
+            BallControl_ForceStop();
             CL_StopAll();
             TaskCtrl_ReportFault();
             uart_puts("ERR: Emergency stop\r\n");
