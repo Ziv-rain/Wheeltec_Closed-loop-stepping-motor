@@ -47,8 +47,9 @@ typedef struct {
     float   setpoint_cm;   /* 目标位置(cm) */
     float   pid_out_deg;   /* 最近一次PID输出(°) */
     float   ball_velocity_cm_s; /* filtered ball velocity */
+    float   velocity_ref_cm_s;  /* return controller speed target */
     uint8_t seq_step;           /* 0=idle, 1..4=current sequence stage */
-    uint8_t stable;             /* 1=within 0.5 mm and low speed for 500 ms */
+    uint8_t stable;             /* 1=within 5 mm and low speed for 500 ms */
 } VisionStatus_t;
 
 uint8_t MechBalance_StartVision(void);           /* 数据和PWM有效时启动 */

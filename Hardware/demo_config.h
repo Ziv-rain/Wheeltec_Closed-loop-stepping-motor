@@ -24,29 +24,37 @@
 #define PID_INTEGRAL_LIMIT          10.0f
 
 /* ---- 视觉PID精调参数 (DEMO8) ---- */
-#define VIS_KP                      0.45f   /* 位置增益: deg/cm */
-#define VIS_KD                      0.30f   /* 滤波速度增益: deg/(cm/s) */
-#define VIS_KI                      0.0f
-#define VIS_INTEGRAL_LIMIT          10.0f
-#define VIS_OUTPUT_MIN_DEG          (-2.0f)
-#define VIS_OUTPUT_MAX_DEG          2.0f
+#define VIS_KP                      0.50f   /* 保持位置增益: deg/cm */
+#define VIS_KD                      0.40f   /* 保持速度阻尼: deg/(cm/s) */
+#define VIS_KI                      0.08f   /* 仅用于补偿轨道微倾和静态偏差 */
+#define VIS_INTEGRAL_LIMIT          6.0f
+#define VIS_OUTPUT_MIN_DEG          (-1.5f)
+#define VIS_OUTPUT_MAX_DEG          1.5f
 #define VIS_SETPOINT_CM             (-5.0f) /* 默认在A'侧标定点稳定，运行时可N命令修改 */
 #define VIS_SETPOINT_LIMIT_CM       9.0f
-#define VIS_VELOCITY_FILTER_ALPHA   0.70f   /* 越大越平滑，范围0..1 */
-#define VIS_POSITION_DEADBAND_CM    0.03f
-#define VIS_VELOCITY_DEADBAND_CM_S  0.20f
-#define VIS_TARGET_TOL_CM           0.05f   /* 0.5 mm */
+#define VIS_VELOCITY_FILTER_ALPHA   0.50f   /* 减少速度估计滞后 */
+#define VIS_POSITION_DEADBAND_CM    0.20f
+#define VIS_VELOCITY_DEADBAND_CM_S  0.30f
+#define VIS_TARGET_TOL_CM           0.50f   /* 5 mm */
 #define VIS_STABLE_TIME_MS          500U
 #define VIS_GUARD_OVERSHOOT_CM      0.75f
 #define VIS_GUARD_PREDICT_S         0.20f
 #define VIS_GUARD_BRAKE_DEG         (-5.0f)
+#define VIS_STICTION_ERROR_CM       0.25f
+#define VIS_STICTION_SPEED_CM_S     0.25f
+#define VIS_STICTION_COMP_DEG       0.45f
 
-/* 0 -> +5 -> -5 视觉辅助四阶段轨迹 */
+/* +5 -> -5 位置外环/速度内环 */
 #define SEQ_TURNAROUND_CM           4.7f
-#define SEQ_BRAKE_LATEST_CM         (-1.0f)
-#define SEQ_BRAKE_DECEL_CM_S2       12.0f
-#define SEQ_BRAKE_MARGIN_CM         0.8f
-#define SEQ_CAPTURE_VEL_CM_S        0.6f
+#define RETURN_POSITION_TO_SPEED    1.0f    /* 1/s */
+#define RETURN_MAX_SPEED_CM_S       5.0f
+#define RETURN_VELOCITY_KP          0.80f   /* deg/(cm/s) */
+#define RETURN_VELOCITY_KI          0.12f
+#define RETURN_INTEGRAL_LIMIT       3.0f
+#define RETURN_CAPTURE_POS_CM       0.50f
+#define RETURN_CAPTURE_VEL_CM_S     0.50f
+#define RETURN_TIMEOUT_MS           8000U
+#define CAPTURE_TIMEOUT_MS          10000U
 
 /* PWM 绝对角度机械限位保护 (电机固定区间不跨0°/360°, 实测值) */
 #define PWM_LIMIT_HIGH              190.0f   /* 正极限 PWM 角度 (+50° 电机位置) */

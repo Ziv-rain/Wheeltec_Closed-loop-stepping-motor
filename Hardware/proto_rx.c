@@ -1,7 +1,7 @@
 #include "proto_rx.h"
 #include "ti_msp_dl_config.h"
 #define RX_MAX 64U
-#define BALL_DATA_TIMEOUT_MS 200U
+#define BALL_DATA_TIMEOUT_MS 100U
 typedef struct{uint8_t s,t,l,i,d[RX_MAX];uint16_t c;volatile BallData_t b;}PR_t;
 static PR_t r;
 static uint16_t crc16f(uint8_t t,uint8_t l,const uint8_t*d){uint16_t c=0;uint8_t i,j;c^=t;for(j=0;j<8;j++)c=(c&1)?(c>>1)^0xA001:c>>1;c^=l;for(j=0;j<8;j++)c=(c&1)?(c>>1)^0xA001:c>>1;for(i=0;i<l;i++){c^=d[i];for(j=0;j<8;j++)c=(c&1)?(c>>1)^0xA001:c>>1;}return c;}
