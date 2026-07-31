@@ -1,41 +1,63 @@
 #ifndef MECH_BALANCE_H
 #define MECH_BALANCE_H
+
 #include <stdint.h>
 
-/* 纯力学前馈补偿参数 (可通过串口调参) */
+#define MECH_SEQ_STEP_COUNT       7U
+#define MECH_ANGLE_MIN_DEG       (-30.0f)
+#define MECH_ANGLE_MAX_DEG       45.0f
+#define MECH_SEQ_TIME_MIN_MS      5U
+#define MECH_SEQ_TIME_MAX_MS      10000U
+
 typedef struct {
-    float gravity;              /* 重力加速度 m/s² */
-    float accel_gain_fwd;       /* 前向加速增益 */
-    float accel_gain_brake;     /* 制动增益 */
-    float accel_bias;           /* 加速度零偏 m/s² */
-    float theta_trim_deg;       /* 静态水平微调 ° */
-    float theta_rate_limit;     /* 角度变化率限制 °/s */
-    float pitch_deg;            /* 车体俯仰角 ° (无IMU则0) */
+    float gravity;
+    float accel_gain_fwd;
+    float accel_gain_brake;
+    float accel_bias;
+    float theta_trim_deg;
+    float theta_rate_limit;
+    float pitch_deg;
 } MechParams_t;
+
+typedef enum {
+    MECH_STATUS_ARMED = 0,
+    MECH_STATUS_RUNNING,
+    MECH_STATUS_FINISHED,
+    MECH_STATUS_STOPPED,
+    MECH_STATUS_FAULT_PWM,
+    MECH_STATUS_FAULT_LIMIT,
+    MECH_STATUS_FAULT_DRIVER
+} MechStatus_t;
 
 void MechBalance_Init(void);
 void MechBalance_Tick5ms(void);
-void MechBalance_SetAccel(float ax_mps2);      /* 设置车辆纵向加速度 */
-void MechBalance_SetParam(uint8_t id, float v); /* 调参 (id见枚举) */
-const MechParams_t *MechBalance_GetParams(void);
-void MechBalance_SetDirectAngle(float deg);    /* 手动倾角模式: 直接设摆杆角 */
-void MechBalance_ExitDirect(void);             /* 退出手动模式, 回到力学补偿 */
-uint8_t MechBalance_IsDirect(void);            /* 是否处于手动模式 */
+void MechBalance_EmergencyStop(void);
 
-/* 角度序列: 4步 (滚向D' → 减速 → 反向刹车 → 回水平), 每步角度/时长可调 */
-void MechBalance_SetSeqAngle(uint8_t idx, float deg);   /* idx=0..3 */
-void MechBalance_SetSeqTime(uint8_t idx, uint32_t ms);  /* idx=0..3 */
-void MechBalance_StartSeq(void);
+uint8_t MechBalance_SetAccel(float ax_mps2);
+uint8_t MechBalance_SetParam(uint8_t id, float value);
+const MechParams_t *MechBalance_GetParams(void);
+
+uint8_t MechBalance_SetDirectAngle(float deg);
+void MechBalance_ExitDirect(void);
+uint8_t MechBalance_IsDirect(void);
+
+uint8_t MechBalance_SetSeqAngle(uint8_t index, float deg);
+uint8_t MechBalance_SetSeqTime(uint8_t index, uint32_t ms);
+float MechBalance_GetSeqAngle(uint8_t index);
+uint32_t MechBalance_GetSeqTime(uint8_t index);
+uint8_t MechBalance_StartSeq(uint8_t run_mode);
 void MechBalance_StopSeq(void);
 uint8_t MechBalance_IsSeqActive(void);
+uint8_t MechBalance_GetSeqStep(void);
+uint32_t MechBalance_GetSeqElapsed(void);
+MechStatus_t MechBalance_GetStatus(void);
 
-/* 调参ID */
-#define MP_GRAVITY      0
-#define MP_GAIN_FWD     1
-#define MP_GAIN_BRAKE   2
-#define MP_ACCEL_BIAS   3
-#define MP_TRIM         4
-#define MP_RATE_LIMIT   5
-#define MP_PITCH        6
+#define MP_GRAVITY      0U
+#define MP_GAIN_FWD     1U
+#define MP_GAIN_BRAKE   2U
+#define MP_ACCEL_BIAS   3U
+#define MP_TRIM         4U
+#define MP_RATE_LIMIT   5U
+#define MP_PITCH        6U
 
 #endif
