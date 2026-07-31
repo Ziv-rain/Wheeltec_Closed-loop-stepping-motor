@@ -26,8 +26,8 @@
 
 static MechParams_t s_params = {
     .gravity = 9.80665f,
-    .accel_gain_fwd = 1.2f,   /* 实测: 增益1.0时球仍往后走, 提高补偿 */
-    .accel_gain_brake = 1.2f,
+    .accel_gain_fwd = 1.0f,   /* 审查: 前馈不应压过PID, 合成<=+-18 */
+    .accel_gain_brake = 1.0f,
     .accel_bias = 0.0f,
     .theta_trim_deg = 0.0f,
     .theta_rate_limit = 80.0f,
@@ -46,6 +46,7 @@ static uint8_t s_emergency_stop;
 /* 前馈融合开关 (串口 F<0|1> 可切换) */
 static uint8_t s_ff_merge_enabled = MECH_FF_MERGE_ENABLE;
 static float s_ff_angle_deg;
+static uint32_t s_accel_age_ms;   /* 距上次SetAccel的时间, 超时前馈衰减回零 */
 
 static float clampf(float value, float minimum, float maximum)
 {
@@ -75,12 +76,12 @@ static float slew_to(float target, float rate_deg_s)
 }
 
 /* 力学前馈: 加速度 -> 抵消惯性的摆杆倾角 (限幅防电机猛甩) */
-#define FF_ANGLE_LIMIT_DEG 15.0f   /* 默认15度≈抵消2.7m/s2, 串口E命令可调 */
+#define FF_ANGLE_LIMIT_DEG 12.0f   /* 默认12度≈抵消2.1m/s2(G=1.0), 串口E命令可调 */
 static float s_ff_angle_limit = FF_ANGLE_LIMIT_DEG;
 
 void MechBalance_SetFFLimit(float deg)
 {
-    if (finitef(deg) && deg >= 4.0f && deg <= 20.0f) s_ff_angle_limit = deg;
+    if (finitef(deg) && deg >= 4.0f && deg <= 15.0f) s_ff_angle_limit = deg;
 }
 static float acceleration_base_angle(void)
 {
@@ -146,6 +147,7 @@ void MechBalance_SetAccel(float ax_mps2)
     if (!finitef(ax_mps2)) return;
     /* 物理合理上限: 比赛加速度<=2, 4.94/6.39等异常直接丢弃 */
     if (fabsf(ax_mps2) > 3.0f) return;
+    s_accel_age_ms = 0U;
     /* EMA低通: 编码器两次差分噪声大, 0.5为新值权重(~2帧响应) */
     s_accel_mps2 = 0.50f * s_accel_mps2 + 0.50f * ax_mps2;
     /* 死区: 微小加速度忽略 */
@@ -293,6 +295,12 @@ void MechBalance_Tick5ms(void)
     uint8_t ball_valid, new_frame;
 
     if (s_emergency_stop) return;
+    /* 编码器断流超时: 前馈平滑衰减回零, 摆杆不保持非水平角 */
+    if (s_accel_age_ms <= 0xFFFFFFFFU - 5U) s_accel_age_ms += 5U;
+    if (s_accel_age_ms > 500U) {
+        s_accel_mps2 *= 0.90f;
+        if (fabsf(s_accel_mps2) < 0.05f) s_accel_mps2 = 0.0f;
+    }
     if (CL_GetFault(MOTOR_AXIS_X) != CL_FAULT_NONE) {
         latch_emergency();
         return;

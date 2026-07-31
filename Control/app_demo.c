@@ -31,6 +31,7 @@ static uint8_t s_demo2_state;
 #if (DEMO_SELECT == 8)
 #define DEMO8_AUTO_S_MS 500U    /* 自动状态输出间隔: 观察ax/ff变化 */
 static uint32_t s_last_auto_s;
+static uint8_t s_task_running;  /* 赛题RUNNING状态锁存(边沿启停PID) */
 #endif
 
 #if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
@@ -398,16 +399,22 @@ void Demo_Tick5ms(void)
     if (BallControl_IsHomingReady()) {
         TaskInfo_t ti;
         float touch_cm;
-        /* 触摸目标: TYPE 0x31 优先于赛题SP */
+        uint8_t task_run = 0;
+        /* 赛题T4/T5/T6: 仅RUNNING边沿启动PID, 下降沿(STOP)停止 */
+        if (TaskCtrl_GetInfo(&ti) && ti.state == STATE_RUNNING
+            && ti.task_id >= TASK_4 && ti.task_id <= TASK_6) {
+            task_run = 1;
+            MechBalance_SetVisionTargetOnly(ti.setpoint_cm);
+        }
+        if (task_run && !s_task_running) {
+            MechBalance_StartVision();      /* 赛题start: 上升沿启动 */
+        } else if (!task_run && s_task_running) {
+            MechBalance_StopVision();       /* 赛题stop: 下降沿停止 */
+        }
+        s_task_running = task_run;
+        /* 触摸目标: 只更新目标位置, 不改变PID模式 */
         if (ProtoRx_GetTouchTarget(&touch_cm)) {
             MechBalance_SetVisionTargetOnly(touch_cm);
-            if (!MechBalance_IsVisionActive()) MechBalance_StartVision();
-        }
-        /* 赛题T4/T5/T6运行中 -> 视觉PID使用任务设定点 */
-        else if (TaskCtrl_GetInfo(&ti) && ti.state == STATE_RUNNING
-            && ti.task_id >= TASK_4 && ti.task_id <= TASK_6) {
-            MechBalance_SetVisionTargetOnly(ti.setpoint_cm);
-            if (!MechBalance_IsVisionActive()) MechBalance_StartVision();
         }
         /* 车轮编码器加速度 -> 力学前馈补偿 (仅新帧才喂EMA, 避免5ms重复放大) */
         {
