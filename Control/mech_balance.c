@@ -77,12 +77,12 @@ static float slew_to(float target, float rate_deg_s)
 }
 
 /* 力学前馈: 加速度 -> 抵消惯性的摆杆倾角 (限幅防电机猛甩) */
-#define FF_ANGLE_LIMIT_DEG 12.0f   /* 默认12度≈抵消2.1m/s2(G=1.0), 串口E命令可调 */
+#define FF_ANGLE_LIMIT_DEG 30.0f   /* 默认30度(机械极限附近, 用户要求), 串口E命令可调 */
 static float s_ff_angle_limit = FF_ANGLE_LIMIT_DEG;
 
 void MechBalance_SetFFLimit(float deg)
 {
-    if (finitef(deg) && deg >= 4.0f && deg <= 15.0f) s_ff_angle_limit = deg;
+    if (finitef(deg) && deg >= 4.0f && deg <= 30.0f) s_ff_angle_limit = deg;
 }
 static float acceleration_base_angle(void)
 {
