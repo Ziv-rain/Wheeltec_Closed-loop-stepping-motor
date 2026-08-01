@@ -32,6 +32,8 @@ static uint8_t s_demo2_state;
 #define DEMO8_AUTO_S_MS 500U    /* 自动状态输出间隔: 观察ax/ff变化 */
 static uint32_t s_last_auto_s;
 static uint8_t s_task_running;  /* 赛题RUNNING状态锁存(边沿启停PID) */
+static uint8_t s_homing_task;   /* 赛题start回零等待中 */
+static uint32_t s_home_start_ms; /* 回零等待起始时间 */
 #endif
 
 #if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
@@ -424,11 +426,32 @@ void Demo_Tick5ms(void)
             MechBalance_SetVisionTargetOnly(ti.setpoint_cm);
         }
         if (task_run && !s_task_running) {
-            MechBalance_StartVision();      /* 赛题start: 上升沿启动 */
+            /* 赛题start: 先回水平零点, 电机到位后再启动PID */
+            s_homing_task = 1U;
+            s_home_start_ms = s_ms;
         } else if (!task_run && s_task_running) {
             MechBalance_StopVision();       /* 赛题stop: 下降沿停止 */
+            s_homing_task = 0U;
         }
         s_task_running = task_run;
+        /* 回零等待: 电机回水平(|Act|<0.5°)或超时1s后启动PID */
+        if (s_homing_task) {
+            uint8_t home_done = 0U;
+            if (s_ms - s_home_start_ms > 1000U) {
+                home_done = 1U;              /* 超时强制启动 */
+            } else {
+                CL_Snapshot_t snap;
+                float e;
+                CL_GetSnapshot(MOTOR_AXIS_X, &snap);
+                e = snap.current_angle_deg;
+                if (e < 0.0f) e = -e;
+                if (e < 0.5f) home_done = 1U;  /* 已水平 */
+            }
+            if (home_done) {
+                s_homing_task = 0U;
+                MechBalance_StartVision();   /* 电机到位, 启动PID */
+            }
+        }
         /* 触摸目标: 只更新目标位置, 不改变PID模式 */
         if (ProtoRx_GetTouchTarget(&touch_cm)) {
             MechBalance_SetVisionTargetOnly(touch_cm);
