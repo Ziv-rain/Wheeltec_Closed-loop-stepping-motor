@@ -18,6 +18,12 @@ typedef struct {
     uint32_t source_tick_ms;
     uint32_t frame;
 } WheelTelemetry_t;
+typedef struct {
+    float accel_mps2;
+    uint32_t source_tick_ms;
+    uint32_t frame;
+    uint32_t telemetry_frame;
+} WheelAccelSample_t;
 void TaskCtrl_Init(void);
 void TaskCtrl_Tick5ms(void);
 void TaskCtrl_Process(void);
@@ -26,6 +32,7 @@ void TaskCtrl_ReportBallPos(float cm);
 void TaskCtrl_ReportBallInvalid(void);
 uint8_t TaskCtrl_GetWheelAccel(float *ax_mps2); /* 车轮加速度: 0=暂无数据 */
 uint32_t TaskCtrl_GetWheelFrame(void);           /* 有效编码器帧计数(判断新帧) */
+uint8_t TaskCtrl_GetWheelAccelSample(WheelAccelSample_t *sample);
 uint8_t TaskCtrl_GetWheelTelemetry(WheelTelemetry_t *telemetry);
 uint8_t TaskCtrl_RequestHistoryDump(void);
 void TaskCtrl_ReportFault(void);
