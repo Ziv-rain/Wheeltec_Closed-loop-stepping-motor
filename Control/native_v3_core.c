@@ -295,10 +295,10 @@ void NativeV3_DefaultConfig(NativeV3_Config_t *cfg)
     cfg->stiction_velocity_cm_s = 0.30f;
     cfg->moving_velocity_cm_s = 0.40f;
     cfg->stiction_confirm_ms = 400U;   /* 审查: 确认时间加长 */
-    cfg->breakaway_positive_deg = 6.00f;
-    cfg->breakaway_negative_deg = -6.00f;
+    cfg->breakaway_positive_deg = 10.00f;
+    cfg->breakaway_negative_deg = -10.00f;
     cfg->breakaway_release_cm = 0.25f;
-    cfg->breakaway_max_ms = 200U;      /* 审查: 最长脱困缩短, 避免猛推 */
+    cfg->breakaway_max_ms = 400U;      /* 审查: 最长脱困缩短, 避免猛推 */
 
     cfg->vision_timeout_ms = 200U;
     cfg->recovery_frames = 2U;

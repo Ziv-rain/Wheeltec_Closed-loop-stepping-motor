@@ -204,8 +204,6 @@ static void Demo_PollUart(void)
             uart_puts("OK emergency stop; reboot required\r\n");
         } else if (ch == 'S' || ch == 's') {
             Demo8_PrintStatus();
-        } else if (ch == 'Z' || ch == 'z') {
-            uart_puts("ERR zero is owned by automatic homing\r\n");
         } else if (ch == 'P' || ch == 'p') {
             const MechParams_t *m = MechBalance_GetParams();
             VisionStatus_t vs;
@@ -229,6 +227,16 @@ static void Demo_PollUart(void)
             MechBalance_StopVision();
             uart_puts("Vision PID stopped\r\n");
 #endif
+        } else if (ch == '!') {
+            TaskCtrl_StopTask();
+            uart_puts("OK task stopped\r\n");
+        } else if (ch == '@') {
+            TaskCtrl_StartTask3();
+            uart_puts("OK T3 started: ");
+            uart_putf(TaskCtrl_GetT3Target1(), 1);
+            uart_puts(" -> ");
+            uart_putf(TaskCtrl_GetT3Target2(), 1);
+            uart_puts("\r\n");
         }
         /* 回车优先处理: 触发命令解析 */
         else if (ch == '\r' || ch == '\n') {
@@ -261,7 +269,9 @@ static void Demo_PollUart(void)
                     case 'T': MechBalance_SetParam(MP_TRIM, v); uart_puts("OK trim="); uart_putf(v,2); break;
                     case 'G': MechBalance_SetParam(MP_GAIN_FWD, v); uart_puts("OK fwd="); uart_putf(v,2); break;
                     case 'B': MechBalance_SetParam(MP_GAIN_BRAKE, v); uart_puts("OK brk="); uart_putf(v,2); break;
-                    case 'L': case 'R': MechBalance_SetParam(MP_RATE_LIMIT, v); uart_puts("OK rate="); uart_putf(v,0); break;
+                    case 'L': MechBalance_SetParam(MP_RATE_LIMIT, v); uart_puts("OK rate="); uart_putf(v,0); break;
+                    case 'R': MechBalance_SetBreakaway(v, 400); uart_puts("OK breakaway="); uart_putf(v,1); uart_puts("deg (max 400ms)\r\n"); break;
+                    case 'Z': TaskCtrl_SetT3Brake(v); uart_puts("OK T3.brake="); uart_putf(v,1); uart_puts("deg\r\n"); break;
                     case 'N':
                         if (MechBalance_SetVisionSetpoint(v)) {
                             uart_puts("OK vis_sp="); uart_putf(v,2);
@@ -279,6 +289,11 @@ static void Demo_PollUart(void)
                         else { MechBalance_EnableFFMerge(0U); uart_puts("OK FF merge OFF"); }
                         break;
                     case 'E': MechBalance_SetFFLimit(v); uart_puts("OK ff_limit="); uart_putf(v,1); break;
+                    case 'H': TaskCtrl_SetT3Target1(v); uart_puts("OK T3.tgt1="); uart_putf(v,2); break;
+                    case 'K': TaskCtrl_SetT3Target2(v); uart_puts("OK T3.tgt2="); uart_putf(v,2); break;
+                    case 'Y': TaskCtrl_SetT3Mid(v); uart_puts("OK T3.mid="); uart_putf(v,2); break;
+                    case 'Q': TaskCtrl_SetT3Ramp((uint32_t)v); uart_puts("OK T3.ramp="); uart_putu((uint32_t)v); uart_puts("ms\r\n"); break;
+                    case 'C': TaskCtrl_SetT3Tol(v); uart_puts("OK T3.tol="); uart_putf(v,2); break;
                     default: uart_puts("ERR cmd"); break;
                     }
                     uart_puts("\r\n");
@@ -288,8 +303,8 @@ static void Demo_PollUart(void)
                 s_line_len = 0U;
             }
         }
-        /* A/T/G/B/L/R/D/N/J/M/I/O/U/F 命令开头 */
-        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='R'||ch=='r'||ch=='D'||ch=='d'||ch=='N'||ch=='n'||ch=='J'||ch=='j'||ch=='M'||ch=='m'||ch=='I'||ch=='i'||ch=='O'||ch=='o'||ch=='U'||ch=='u'||ch=='F'||ch=='f'||ch=='E'||ch=='e') {
+        /* A/T/G/B/L/D/N/J/M/I/O/U/F/E/H/K/Y/Q/C/R/Z 命令开头 */
+        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='D'||ch=='d'||ch=='N'||ch=='n'||ch=='J'||ch=='j'||ch=='M'||ch=='m'||ch=='I'||ch=='i'||ch=='O'||ch=='o'||ch=='U'||ch=='u'||ch=='F'||ch=='f'||ch=='E'||ch=='e'||ch=='H'||ch=='h'||ch=='K'||ch=='k'||ch=='Y'||ch=='y'||ch=='Q'||ch=='q'||ch=='C'||ch=='c'||ch=='R'||ch=='r'||ch=='Z'||ch=='z') {
             if (s_line_len < sizeof(s_line) - 1U) {
                 s_line[s_line_len++] = ch;
             }
@@ -370,9 +385,11 @@ void Demo_Init(void)
     uart_puts("  A<val> set accel  T<val> set trim  D<val> direct angle\r\n");
     uart_puts("  G/B fwd/brake gain  L/R rate limit  P print  S status  X stop\r\n");
 #elif (DEMO_SELECT == 8)
-    uart_puts("- V3 State Machine + Accel FF (Tasks 4 & 5)\r\n");
+    uart_puts("- V3 State Machine + Accel FF (Tasks 3/4/5/6)\r\n");
     uart_puts("  V start  W stop  N<val> target  A<val> accel m/s2  F<0|1> ff merge\r\n");
     uart_puts("  J/M/I KP/KD/KI  O<val> outMin  U<val> outMax  S status  P params  X stop\r\n");
+    uart_puts("  H<val> T3.tgt1  K<val> T3.tgt2  Y<val> T3.mid  Q<val> T3.ramp_ms\r\n");
+    uart_puts("  C<val> T3.tol  Z<val> T3.brake_deg  R<val> breakaway  @ start  ! stop\r\n");
 #else
     uart_puts("- Ball control mode (UART2 vision + PID)\r\n");
 #endif
@@ -400,9 +417,9 @@ void Demo_Tick5ms(void)
         TaskInfo_t ti;
         float touch_cm;
         uint8_t task_run = 0;
-        /* 赛题T4/T5/T6: 仅RUNNING边沿启动PID, 下降沿(STOP)停止 */
+        /* 赛题T3/T4/T5/T6: 仅RUNNING边沿启动PID, 下降沿(STOP)停止 */
         if (TaskCtrl_GetInfo(&ti) && ti.state == STATE_RUNNING
-            && ti.task_id >= TASK_4 && ti.task_id <= TASK_6) {
+            && ti.task_id >= TASK_3 && ti.task_id <= TASK_6) {
             task_run = 1;
             MechBalance_SetVisionTargetOnly(ti.setpoint_cm);
         }
@@ -454,10 +471,18 @@ void Demo_Process(void)
 #endif
 
 #if (DEMO_SELECT == 8)
-    /* 自动状态输出: 固定间隔打印S状态, 便于观察ax/ff变化趋势 */
+    /* Task 3 运行时: 每300ms打印轨迹进度 */
     if ((s_ms - s_last_auto_s) >= DEMO8_AUTO_S_MS) {
         s_last_auto_s = s_ms;
-        Demo8_PrintStatus();
+        TaskInfo_t ti;
+        if (TaskCtrl_GetInfo(&ti) && ti.task_id == TASK_3 && ti.state == STATE_RUNNING) {
+            VisionStatus_t vs;
+            MechBalance_GetVisionStatus(&vs);
+            uart_puts("[T3] "); uart_putu(ti.run_time_ms/100);
+            uart_puts("/50 sp="); uart_putf(ti.setpoint_cm, 1);
+            if (vs.valid) { uart_puts(" ball="); uart_putf(vs.ball_pos_cm, 1); }
+            uart_puts("\r\n");
+        }
     }
 #endif
 

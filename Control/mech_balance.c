@@ -259,6 +259,16 @@ void MechBalance_GetVisionStatus(VisionStatus_t *status)
     status->accel_mps2 = s_accel_mps2;
 }
 
+void MechBalance_SetBreakaway(float deg, uint32_t max_ms)
+{
+    if(deg>=1.0f&&deg<=12.0f){s_controller.cfg.breakaway_positive_deg=deg;s_controller.cfg.breakaway_negative_deg=-deg;}
+    if(max_ms>=50&&max_ms<=1000)s_controller.cfg.breakaway_max_ms=max_ms;
+}
+void MechBalance_SetStiction(float err_cm, uint32_t confirm_ms)
+{
+    if(err_cm>=0.3f&&err_cm<=5.0f)s_controller.cfg.stiction_error_cm=err_cm;
+    if(confirm_ms>=100&&confirm_ms<=2000)s_controller.cfg.stiction_confirm_ms=confirm_ms;
+}
 void MechBalance_EmergencyStop(void) { latch_emergency(); }
 
 void MechBalance_SetParam(uint8_t id, float value)

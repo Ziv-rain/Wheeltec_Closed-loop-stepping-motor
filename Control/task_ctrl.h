@@ -21,4 +21,16 @@ uint8_t TaskCtrl_GetWheelAccel(float *ax_mps2); /* 车轮加速度: 0=暂无数�
 uint32_t TaskCtrl_GetWheelFrame(void);           /* 有效编码器帧计数(判断新帧) */
 void TaskCtrl_ReportFault(void);
 uint8_t TaskCtrl_GetInfo(TaskInfo_t *info);
+/* 第3题参数设置 (UART0调试命令调用) */
+void TaskCtrl_SetT3Target1(float cm);
+void TaskCtrl_SetT3Target2(float cm);
+void TaskCtrl_SetT3Mid(float cm);
+void TaskCtrl_SetT3Ramp(uint32_t ms);
+void TaskCtrl_SetT3Tol(float cm);
+void TaskCtrl_SetT3Brake(float deg);
+/* 第3题一键启动 + 停止 + 参数查询 */
+void TaskCtrl_StartTask3(void);
+void TaskCtrl_StopTask(void);
+float TaskCtrl_GetT3Target1(void);
+float TaskCtrl_GetT3Target2(void);
 #endif

@@ -97,10 +97,13 @@
  *     AA 55 FF 01 00 CRC_L CRC_H
  *
  *   === 各赛题流程 ===
- *   第3题: 切换(0x01,task=3) → 开始(0x02)
- *          → 自动轨迹 O→+5cm→O→-5cm(5秒)
- *          → 球稳定在-5cm±1cm达500ms → 自动 DONE
+ *   第3题: 切换(0x01,task=3) → 可选设参(0x04设tgt1, 0x05设tgt2) → 开始(0x02)
+ *          → setpoint 从 0cm 跳变到 target1(默认+5cm, UART0: H命令)
+ *          → 球稳定在target1±tol达settle或超时 → setpoint跳到target2(默认-5cm, K命令)
+ *          → 球稳定在target2±tol达settle或超时 → 自动 DONE
  *          → 停止(0x03)
+ *          UART0一键启动: @键  参数: H/K/Q/C命令
+ *          cmd=0x05: 设T3参数 task=索引(1..6) param=值
  *
  *   第4题: 切换(0x01,task=4) → 开始(0x02)
  *          → PID 平衡控制(setpoint=0cm)
