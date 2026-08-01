@@ -26,7 +26,7 @@
 
 static MechParams_t s_params = {
     .gravity = 9.80665f,
-    .accel_gain_fwd = 9.0f,   /* 用户实机标定 */
+    .accel_gain_fwd = 9.2f,   /* 用户实机标定 */
     .accel_gain_brake = 2.0f, /* 用户实机标定 */
     .accel_bias = 0.0f,
     .theta_trim_deg = 0.0f,

@@ -266,7 +266,7 @@ void NativeV3_DefaultConfig(NativeV3_Config_t *cfg)
     if (cfg == NULL) return;
 
     /* Values are derived only from this repository's measurements/history. */
-    cfg->kp = 2.00f;   /* 实机标定: KP=2.0 球能回中不振荡 */
+    cfg->kp = 2.35f;   /* 实机标定 */
     cfg->kd = 0.50f;
     cfg->ki = 0.02f;
     cfg->integral_limit = 3.0f;
