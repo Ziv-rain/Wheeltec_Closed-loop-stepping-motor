@@ -2,6 +2,7 @@
 #define TASK_CTRL_H
 #include <stdint.h>
 #define TASK_IDLE 0
+#define TASK_2 2
 #define TASK_3 3
 #define TASK_4 4
 #define TASK_5 5
