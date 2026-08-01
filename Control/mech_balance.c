@@ -150,10 +150,10 @@ void MechBalance_SetAccel(float ax_mps2)
     if (fabsf(ax_mps2) > 3.0f) return;
     s_accel_age_ms = 0U;
     s_accel_manual = 0U;   /* 编码器来源: 断流时允许衰减 */
-    /* EMA低通: 编码器两次差分噪声大, 0.5为新值权重(~2帧响应) */
-    s_accel_mps2 = 0.50f * s_accel_mps2 + 0.50f * ax_mps2;
-    /* 死区: 微小加速度忽略 */
-    if (fabsf(s_accel_mps2) < 0.05f) s_accel_mps2 = 0.0f;
+    /* EMA低通: 审查建议0.75-0.85, 噪声压4倍(0.8为新值权重~5帧) */
+    s_accel_mps2 = 0.80f * s_accel_mps2 + 0.20f * ax_mps2;
+    /* 软死区: 审查建议0.08-0.12, 匀速小漂移不再进前馈 */
+    if (fabsf(s_accel_mps2) < 0.10f) s_accel_mps2 = 0.0f;
 }
 
 /* 手动A命令: 直接设置且不被断流衰减(测试前馈用) */
@@ -354,8 +354,10 @@ void MechBalance_Tick5ms(void)
         target = s_params.theta_trim_deg;
         rate = s_params.theta_rate_limit;
     } else if (s_ff_merge_enabled) {
-        /* 融合: 前馈基座 + 状态机修正 */
-        target = s_ff_angle_deg + correction;
+        /* 总预算±8°: PID修正优先, 前馈只占剩余预算(至少2°) */
+        float ff_budget = 8.0f - fabsf(correction);
+        if (ff_budget < 2.0f) ff_budget = 2.0f;
+        target = clampf(s_ff_angle_deg, -ff_budget, ff_budget) + correction;
         rate = (status.requested && !status.vision_valid) ?
             V3_LOST_RATE_DEG_S : s_params.theta_rate_limit;
     } else {

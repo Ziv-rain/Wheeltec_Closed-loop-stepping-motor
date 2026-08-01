@@ -21,7 +21,7 @@ static volatile TCmd_t q[CMD_QUEUE_SIZE];static volatile uint8_t qh,qt;
 static struct{uint8_t tid,st;float sp;uint32_t run;float bp;uint8_t bv;volatile uint8_t esp,ovf,link,pend;uint32_t sms,lrx;}ts;
 static volatile uint32_t tms;static uint32_t lhb,lst;
 /* 车轮编码器: TYPE 0x42 解析 + 加速度估算 */
-#define WENC_SCALE 0.0005f /* 编码器脉冲→米, 需根据实车标定 */
+#define WENC_SCALE 0.0002618f /* 65mm轮780脉冲/圈: pi*0.065/780, 审查实测 */
 static volatile uint32_t w_enc_l,w_enc_r,w_enc_ts;    /* 最新一帧 */
 static volatile uint32_t w_enc_lp,w_enc_rp,w_enc_tsp;  /* 上一帧 */
 static volatile float w_speed_ms,w_accel_ms2;           /* 速度(m/s) + 加速度(m/s²) */

@@ -291,14 +291,14 @@ void NativeV3_DefaultConfig(NativeV3_Config_t *cfg)
     cfg->integral_position_cm = 1.0f;
     cfg->integral_velocity_cm_s = 1.0f;
 
-    cfg->stiction_error_cm = 0.35f;
+    cfg->stiction_error_cm = 0.70f;    /* 审查: 0.35太敏感, 静差被推成摆动 */
     cfg->stiction_velocity_cm_s = 0.30f;
-    cfg->moving_velocity_cm_s = 0.40f;   /* 释放速度提高: 球需真正滚起来才释放 */
-    cfg->stiction_confirm_ms = 300U;
-    cfg->breakaway_positive_deg = 6.00f;     /* 与限幅一致, 卡住全力推 */
-    cfg->breakaway_negative_deg = -6.00f;   /* 与限幅一致 */
-    cfg->breakaway_release_cm = 0.25f;   /* 释放位移提高: 推出静摩擦区才释放 */
-    cfg->breakaway_max_ms = 300U;        /* 脱困时间延长: 更多时间推球 */
+    cfg->moving_velocity_cm_s = 0.40f;
+    cfg->stiction_confirm_ms = 400U;   /* 审查: 确认时间加长 */
+    cfg->breakaway_positive_deg = 6.00f;
+    cfg->breakaway_negative_deg = -6.00f;
+    cfg->breakaway_release_cm = 0.25f;
+    cfg->breakaway_max_ms = 200U;      /* 审查: 最长脱困缩短, 避免猛推 */
 
     cfg->vision_timeout_ms = 200U;
     cfg->recovery_frames = 2U;
