@@ -79,7 +79,7 @@ static void t3tick(void){float tgt;uint8_t sw=0;uint32_t el=ts.run-t3_seg_start;
         tgt=t3_mid+(t3_tgt2-t3_mid)*p;                  /* ramp: mid→final */
         if(ts.bv&&ts.bp<=-4.5f&&p>0.3f)sw=3;}           /* 球过-4.5cm → 刹车 */
     else{MechBalance_SetDirectAngle(t3_brake);           /* 刹车: 锁电机角度 */
-        if(el>=500)sw=4;}                                /* 500ms后 → DONE */
+        if(el>=500){sw=4;MechBalance_ExitDirect();}}     /* 500ms后 → DONE, 退出锁定回水平 */
     if(sw){t3_seg=sw;t3_seg_start=ts.run;ts.sms=0;
         if(sw==1){diag=DIAG_T3_SEG;dt=1;dsp=t3_mid;}
         else if(sw==2){diag=DIAG_T3_SEG;dt=2;dsp=t3_tgt2;}

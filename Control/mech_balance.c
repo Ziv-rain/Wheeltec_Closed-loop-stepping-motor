@@ -176,6 +176,7 @@ uint8_t MechBalance_StartVision(void)
 
 void MechBalance_StopVision(void)
 {
+    s_direct_mode = 0U;   /* 退出T3刹车锁定, 回水平 */
     NativeV3_Pause(&s_controller);
 }
 
