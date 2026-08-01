@@ -16,6 +16,7 @@
 #include "demo_config.h"
 #include "encoder.h"
 #include "proto_rx.h"
+#include "board.h"   /* uart_puts/uart_putf */
 
 #include <math.h>
 
