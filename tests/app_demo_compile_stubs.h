@@ -20,6 +20,13 @@
 #define MOTOR_AXIS_X 0U
 #define ENCODER_AXIS_X 0U
 
+static inline uint32_t test_get_primask(void) { return 0U; }
+static inline void test_disable_irq(void) {}
+static inline void test_enable_irq(void) {}
+#define __get_PRIMASK() test_get_primask()
+#define __disable_irq() test_disable_irq()
+#define __enable_irq() test_enable_irq()
+
 typedef enum { MOTOR_OK = 0, MOTOR_ERROR, MOTOR_BUSY } MotorStatus_t;
 typedef enum {
     CL_FAULT_NONE = 0,
@@ -33,6 +40,19 @@ typedef struct {
     uint8_t active, reached;
     CL_Fault_t fault;
 } CL_Snapshot_t;
+typedef struct {
+    uint8_t task_id, state;
+    float setpoint_cm;
+    uint32_t run_time_ms;
+} TaskInfo_t;
+typedef struct {
+    uint16_t left_counts, right_counts;
+    uint32_t source_tick_ms, frame;
+} WheelTelemetry_t;
+
+#define TASK_4 4U
+#define TASK_6 6U
+#define STATE_RUNNING 1U
 
 void uart_puts(const char *text);
 void uart_putf(float value, uint8_t decimals);
@@ -57,7 +77,18 @@ int32_t Encoder_GetZCount(uint8_t axis);
 
 void ProtoRx_Init(void);
 void ProtoRx_Tick(uint32_t elapsed_ms);
+uint8_t ProtoRx_GetTouchTarget(float *target_cm);
 void TaskCtrl_Init(void);
+void TaskCtrl_Tick5ms(void);
+void TaskCtrl_Process(void);
+void TaskCtrl_ReportBallPos(float cm);
+void TaskCtrl_ReportBallInvalid(void);
+void TaskCtrl_ReportFault(void);
+uint8_t TaskCtrl_GetInfo(TaskInfo_t *info);
+uint8_t TaskCtrl_GetWheelAccel(float *accel_mps2);
+uint32_t TaskCtrl_GetWheelFrame(void);
+uint8_t TaskCtrl_GetWheelTelemetry(WheelTelemetry_t *telemetry);
+uint8_t TaskCtrl_RequestHistoryDump(void);
 void BallControl_Init(void);
 void BallControl_Tick5ms(void);
 uint8_t BallControl_IsHomingReady(void);

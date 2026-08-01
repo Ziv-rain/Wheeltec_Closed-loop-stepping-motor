@@ -70,3 +70,13 @@ CRC使用 CRC-16/IBM，初值 `0x0000`、多项式 `0xA001`，计算范围为
 工程面向 Code Composer Studio、TI Arm Clang、MSPM0 SDK 2.11和
 SysConfig。导入工程后应先重新生成 SysConfig 与 Debug 构建文件，
 不要复用其他电脑生成的绝对路径构建文件。
+
+## 板载 RAM 历史记录
+
+`DEMO_SELECT=8` 下，赛题 4/5/6 运行期间以 20 Hz 把小球、控制器和底板车轮数据写入
+RAM，不在行驶中打印大量串口日志，也不写 Flash。停车后保持两块板供电，
+把 USB-TTL 连到上层板 UART0（115200-8-N-1），先在终端开启文本捕获，再发送一次 `H`。
+导出的 `BALLLOG`/`CARLOG` 行可使用 `tools/analyze_encoder_history.py` 生成 CSV。
+
+详细容量、协议、十组数据的操作步骤和风险说明见
+[`docs/encoder-history-recorder.md`](docs/encoder-history-recorder.md)。
