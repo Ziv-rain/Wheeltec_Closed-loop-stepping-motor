@@ -32,65 +32,6 @@ static uint8_t s_demo2_state;
 #define DEMO8_AUTO_S_MS 500U    /* 自动状态输出间隔: 观察ax/ff变化 */
 static uint32_t s_last_auto_s;
 static uint8_t s_task_running;  /* 赛题RUNNING状态锁存(边沿启停PID) */
-
-/* 运行日志: 环形缓冲, 跑车时自动记录, L命令导出并清空 */
-#define LOG_SIZE 512U
-#define LOG_SAMPLE_MS 100U
-typedef struct {
-    uint32_t t_ms;
-    int16_t ball_c, vel_c, ax_c, ff_c, out_c;
-    uint8_t flags;  /* bit0=act bit1=valid bit2=merged */
-} LogEntry_t;
-static LogEntry_t s_log[LOG_SIZE];
-static uint16_t s_log_head;
-static uint16_t s_log_count;
-static uint32_t s_last_log;
-
-static void Log_Sample(void)
-{
-    VisionStatus_t vs;
-    CL_Snapshot_t snap;
-    LogEntry_t *e;
-    MechBalance_GetVisionStatus(&vs);
-    CL_GetSnapshot(MOTOR_AXIS_X, &snap);
-    e = &s_log[s_log_head];
-    e->t_ms = s_ms;
-    e->ball_c = (int16_t)(vs.ball_pos_cm * 100.0f);
-    e->vel_c  = (int16_t)(vs.ball_velocity_cm_s * 100.0f);
-    e->ax_c   = (int16_t)(vs.accel_mps2 * 100.0f);
-    e->ff_c   = (int16_t)(vs.ff_angle_deg * 100.0f);
-    e->out_c  = (int16_t)(vs.pid_out_deg * 100.0f);
-    e->flags  = (uint8_t)((vs.active ? 1U : 0U) | (vs.valid ? 2U : 0U) |
-                          (vs.ff_merged ? 4U : 0U));
-    s_log_head = (uint16_t)((s_log_head + 1U) % LOG_SIZE);
-    if (s_log_count < LOG_SIZE) s_log_count++;
-}
-
-/* L命令: 导出全部日志并清空 */
-static void Log_Dump(void)
-{
-    uint16_t i, n, idx;
-    uart_puts("===== LOG START =====\r\n");
-    n = s_log_count;
-    for (i = 0U; i < n; i++) {
-        const LogEntry_t *e;
-        idx = (uint16_t)((s_log_head - n + i + LOG_SIZE) % LOG_SIZE);
-        e = &s_log[idx];
-        uart_puts("t="); uart_putu(e->t_ms);
-        uart_puts(" ball="); uart_puti(e->ball_c);
-        uart_puts(" vel="); uart_puti(e->vel_c);
-        uart_puts(" ax="); uart_puti(e->ax_c);
-        uart_puts(" ff="); uart_puti(e->ff_c);
-        uart_puts(" out="); uart_puti(e->out_c);
-        uart_puts(" act="); uart_putu(e->flags & 1U);
-        uart_puts(" val="); uart_putu((e->flags >> 1) & 1U);
-        uart_puts(" mg="); uart_putu((e->flags >> 2) & 1U);
-        uart_puts("\r\n");
-    }
-    uart_puts("===== LOG END =====\r\n");
-    s_log_head = 0U;
-    s_log_count = 0U;
-}
 #endif
 
 #if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
@@ -287,8 +228,6 @@ static void Demo_PollUart(void)
         } else if (ch == 'W' || ch == 'w') {
             MechBalance_StopVision();
             uart_puts("Vision PID stopped\r\n");
-        } else if (ch == 'L' || ch == 'l') {
-            Log_Dump();  /* 导出运行日志并清空 */
 #endif
         }
         /* 回车优先处理: 触发命令解析 */
@@ -519,11 +458,6 @@ void Demo_Process(void)
     if ((s_ms - s_last_auto_s) >= DEMO8_AUTO_S_MS) {
         s_last_auto_s = s_ms;
         Demo8_PrintStatus();
-    }
-    /* 运行日志采样: 每100ms一条, 跑车时自动记录 */
-    if ((s_ms - s_last_log) >= LOG_SAMPLE_MS) {
-        s_last_log = s_ms;
-        Log_Sample();
     }
 #endif
 

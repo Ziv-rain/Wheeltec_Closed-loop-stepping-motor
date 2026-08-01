@@ -16,7 +16,6 @@
 #include "demo_config.h"
 #include "encoder.h"
 #include "proto_rx.h"
-#include "board.h"   /* uart_puts/uart_putf */
 
 #include <math.h>
 
@@ -27,7 +26,7 @@
 
 static MechParams_t s_params = {
     .gravity = 9.80665f,
-    .accel_gain_fwd = 1.0f,   /* 启动段已验证方向对, 保持 */
+    .accel_gain_fwd = 1.0f,   /* 日志证实: G大放大ax噪声推球正端, 回1.0 */
     .accel_gain_brake = 0.3f, /* 匀速负脉冲走B通道推球负端, 先压住 */
     .accel_bias = 0.0f,
     .theta_trim_deg = 0.0f,
@@ -364,16 +363,6 @@ void MechBalance_Tick5ms(void)
         target = s_params.theta_trim_deg + correction;
         rate = (status.requested && !status.vision_valid) ?
             V3_LOST_RATE_DEG_S : s_params.theta_rate_limit;
-    }
-
-    /* 诊断: 匀速时ax负脉冲->B前馈正角->推球负端 (车跑完看日志) */
-    if (s_accel_mps2 < 0.0f && s_ff_angle_deg > 2.0f &&
-        status.requested && fabsf(s_accel_mps2) > 0.3f) {
-        uart_puts("[FFNEG] ax="); uart_putf(s_accel_mps2, 2);
-        uart_puts(" ff="); uart_putf(s_ff_angle_deg, 2);
-        uart_puts(" ball="); uart_putf(status.position_cm, 2);
-        uart_puts(" corr="); uart_putf(correction, 2);
-        uart_puts("\r\n");
     }
 
     target = clampf(target, V3_MECH_ANGLE_MIN_DEG, V3_MECH_ANGLE_MAX_DEG);
