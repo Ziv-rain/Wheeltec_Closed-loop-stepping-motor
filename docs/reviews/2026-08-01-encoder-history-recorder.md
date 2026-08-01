@@ -4,7 +4,7 @@
 
 - 仓库：`Ziv-rain/Wheeltec_Closed-loop-stepping-motor`
 - 源分支：`feat/accel-fusion`
-- 源提交：`f1a33d3349ce3efc6005a92f45fb6dce05af00df`（开发期间新增的 `task=2` 兼容修复已同步保留）
+- 源提交：`5d397cebae53023ba30c2472287ed0f49fd84e15`（开发期间新增的 `task=2` 兼容及“仅 T6 接受目标位置”修复均已同步保留）
 - 审阅分支：`review/encoder-history-recorder`
 - 底板源码基线：
   `C:\Users\lenovo\Desktop\电赛报告文件\2026-Basic Control _Finalall_Task456\2026-Basic Control _Finalall\2026-Basic Control`

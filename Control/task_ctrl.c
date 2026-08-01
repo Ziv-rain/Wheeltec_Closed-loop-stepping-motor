@@ -356,7 +356,7 @@ static void execute_command(const TCmd_t *command)
         s_diag = DIAG_STOP;
         break;
     case 4U:
-        if (s_task.task_id >= TASK_4 && s_task.task_id <= TASK_6) {
+        if (s_task.task_id == TASK_6) {
             s_task.setpoint_cm = (float)command->param / 100.0f;
             s_task.settle_ms = 0U;
             s_diag = DIAG_SP;
