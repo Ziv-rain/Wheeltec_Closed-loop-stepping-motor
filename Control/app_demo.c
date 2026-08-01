@@ -223,11 +223,19 @@ static void Demo_PollUart(void)
             uart_puts("\r\n");
 #if (DEMO_SELECT == 8)
         } else if (ch == 'V' || ch == 'v') {
-            MechBalance_StartVision();
-            uart_puts("Vision PID started\r\n");
+            TaskInfo_t ti;
+            /* 有选中赛题 → 走状态机(自动回零+PID); 无 → 直接PID */
+            if (TaskCtrl_GetInfo(&ti) && ti.task_id != TASK_IDLE) {
+                TaskCtrl_StartTask();
+                uart_puts("Task START\r\n");
+            } else {
+                MechBalance_StartVision();
+                uart_puts("Vision PID started\r\n");
+            }
         } else if (ch == 'W' || ch == 'w') {
-            MechBalance_StopVision();
-            uart_puts("Vision PID stopped\r\n");
+            TaskCtrl_StopTask();       /* 停赛题状态机 */
+            MechBalance_StopVision();  /* 停PID */
+            uart_puts("Stopped\r\n");
 #endif
         } else if (ch == '!') {
             TaskCtrl_StopTask();
@@ -296,6 +304,7 @@ static void Demo_PollUart(void)
                     case 'Y': TaskCtrl_SetT3Mid(v); uart_puts("OK T3.mid="); uart_putf(v,2); break;
                     case 'Q': TaskCtrl_SetT3Ramp((uint32_t)v); uart_puts("OK T3.ramp="); uart_putu((uint32_t)v); uart_puts("ms\r\n"); break;
                     case 'C': TaskCtrl_SetT3Tol(v); uart_puts("OK T3.tol="); uart_putf(v,2); break;
+                    case '#': TaskCtrl_SelectTask((uint8_t)v); uart_puts("OK Task="); uart_putu((uint8_t)v); break;
                     default: uart_puts("ERR cmd"); break;
                     }
                     uart_puts("\r\n");
@@ -306,7 +315,7 @@ static void Demo_PollUart(void)
             }
         }
         /* A/T/G/B/L/D/N/J/M/I/O/U/F/E/H/K/Y/Q/C/R/Z 命令开头 */
-        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='D'||ch=='d'||ch=='N'||ch=='n'||ch=='J'||ch=='j'||ch=='M'||ch=='m'||ch=='I'||ch=='i'||ch=='O'||ch=='o'||ch=='U'||ch=='u'||ch=='F'||ch=='f'||ch=='E'||ch=='e'||ch=='H'||ch=='h'||ch=='K'||ch=='k'||ch=='Y'||ch=='y'||ch=='Q'||ch=='q'||ch=='C'||ch=='c'||ch=='R'||ch=='r'||ch=='Z'||ch=='z') {
+        else if (ch == 'A'||ch=='a'||ch=='T'||ch=='t'||ch=='G'||ch=='g'||ch=='B'||ch=='b'||ch=='L'||ch=='l'||ch=='D'||ch=='d'||ch=='N'||ch=='n'||ch=='J'||ch=='j'||ch=='M'||ch=='m'||ch=='I'||ch=='i'||ch=='O'||ch=='o'||ch=='U'||ch=='u'||ch=='F'||ch=='f'||ch=='E'||ch=='e'||ch=='H'||ch=='h'||ch=='K'||ch=='k'||ch=='Y'||ch=='y'||ch=='Q'||ch=='q'||ch=='C'||ch=='c'||ch=='R'||ch=='r'||ch=='Z'||ch=='z'||ch=='#') {
             if (s_line_len < sizeof(s_line) - 1U) {
                 s_line[s_line_len++] = ch;
             }

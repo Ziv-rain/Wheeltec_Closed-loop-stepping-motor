@@ -107,5 +107,33 @@ void TaskCtrl_SetT3Tol(float cm){if(cm>0.1f&&cm<=5.0f)t3_tol=cm;}
 void TaskCtrl_SetT3Brake(float deg){t3_brake=deg;}
 void TaskCtrl_StartTask3(void){ts.tid=TASK_3;ts.st=STATE_RUNNING;ts.sp=0;ts.run=0;ts.sms=0;ts.bv=0;t3_seg=0;t3_seg_start=0;diag=DIAG_T3_START;ts.pend|=TX_PENDING_STATE;}
 void TaskCtrl_StopTask(void){ts.st=STATE_IDLE;ts.sp=0;ts.run=0;ts.sms=0;ts.bv=0;diag=DIAG_STOP;ts.pend|=TX_PENDING_STATE;}
+/* UART0赛题控制: 等同UART1 0x40指令 */
+void TaskCtrl_SelectTask(uint8_t task)
+{
+    if (task < TASK_2 || task > 6) return;
+    ts.tid = task;
+    ts.st = STATE_IDLE;
+    ts.sp = 0; ts.run = 0; ts.sms = 0; ts.bv = 0;
+    if (task == TASK_3) { t3_seg = 0; t3_seg_start = 0; }
+    diag = DIAG_TASK_OK; dt = task;
+    ts.pend |= TX_PENDING_STATE;
+}
+void TaskCtrl_StartTask(void)
+{
+    if (ts.tid == TASK_3) {
+        ts.st = STATE_RUNNING; ts.run = 0; ts.sms = 0;
+        t3_seg = 0; t3_seg_start = 0;
+        diag = DIAG_T3_START;
+    } else if (ts.tid == TASK_4 || ts.tid == TASK_5) {
+        ts.st = STATE_RUNNING; ts.run = 0; ts.sms = 0;
+        diag = DIAG_START_T4; dt = ts.tid;
+    } else if (ts.tid == TASK_6) {
+        ts.st = STATE_RUNNING; ts.run = 0; ts.sms = 0;
+        diag = DIAG_START;
+    } else {
+        diag = DIAG_NO_TASK;
+    }
+    ts.pend |= TX_PENDING_STATE;
+}
 float TaskCtrl_GetT3Target1(void){return t3_tgt1;}
 float TaskCtrl_GetT3Target2(void){return t3_tgt2;}

@@ -2,6 +2,7 @@
 #define TASK_CTRL_H
 #include <stdint.h>
 #define TASK_IDLE 0
+#define TASK_2 2
 #define TASK_3 3
 #define TASK_4 4
 #define TASK_5 5
@@ -33,4 +34,7 @@ void TaskCtrl_StartTask3(void);
 void TaskCtrl_StopTask(void);
 float TaskCtrl_GetT3Target1(void);
 float TaskCtrl_GetT3Target2(void);
+/* UART0赛题控制 (等同UART1 0x40指令) */
+void TaskCtrl_SelectTask(uint8_t task); /* 等同 cmd=0x01 */
+void TaskCtrl_StartTask(void);          /* 等同 cmd=0x02 */
 #endif
