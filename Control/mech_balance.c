@@ -26,8 +26,8 @@
 
 static MechParams_t s_params = {
     .gravity = 9.80665f,
-    .accel_gain_fwd = 1.0f,   /* 审查: 前馈不应压过PID, 合成<=+-18 */
-    .accel_gain_brake = 1.0f,
+    .accel_gain_fwd = 1.0f,   /* 启动段已验证方向对, 保持 */
+    .accel_gain_brake = 0.3f, /* 匀速负脉冲走B通道推球负端, 先压住 */
     .accel_bias = 0.0f,
     .theta_trim_deg = 0.0f,
     .theta_rate_limit = 80.0f,
@@ -77,7 +77,7 @@ static float slew_to(float target, float rate_deg_s)
 }
 
 /* 力学前馈: 加速度 -> 抵消惯性的摆杆倾角 (限幅防电机猛甩) */
-#define FF_ANGLE_LIMIT_DEG 30.0f   /* 默认30度(机械极限附近, 用户要求), 串口E命令可调 */
+#define FF_ANGLE_LIMIT_DEG 8.0f    /* 前馈不压过PID(+-6), 审查建议首轮<=8 */
 static float s_ff_angle_limit = FF_ANGLE_LIMIT_DEG;
 
 void MechBalance_SetFFLimit(float deg)
@@ -363,6 +363,16 @@ void MechBalance_Tick5ms(void)
         target = s_params.theta_trim_deg + correction;
         rate = (status.requested && !status.vision_valid) ?
             V3_LOST_RATE_DEG_S : s_params.theta_rate_limit;
+    }
+
+    /* 诊断: 匀速时ax负脉冲->B前馈正角->推球负端 (车跑完看日志) */
+    if (s_accel_mps2 < 0.0f && s_ff_angle_deg > 2.0f &&
+        status.requested && fabsf(s_accel_mps2) > 0.3f) {
+        uart_puts("[FFNEG] ax="); uart_putf(s_accel_mps2, 2);
+        uart_puts(" ff="); uart_putf(s_ff_angle_deg, 2);
+        uart_puts(" ball="); uart_putf(status.position_cm, 2);
+        uart_puts(" corr="); uart_putf(correction, 2);
+        uart_puts("\r\n");
     }
 
     target = clampf(target, V3_MECH_ANGLE_MIN_DEG, V3_MECH_ANGLE_MAX_DEG);
