@@ -17,6 +17,7 @@
 #include "ball_control.h"
 #include "task_ctrl.h"
 #include "mech_balance.h"
+#include "history_logger.h"
 
 static volatile uint32_t s_ms;
 #if (DEMO_SELECT == 4) || (DEMO_SELECT == 7) || (DEMO_SELECT == 8)
@@ -32,6 +33,7 @@ static uint8_t s_demo2_state;
 #define DEMO8_AUTO_S_MS 500U    /* 自动状态输出间隔: 观察ax/ff变化 */
 static uint32_t s_last_auto_s;
 static uint8_t s_task_running;  /* 赛题RUNNING状态锁存(边沿启停PID) */
+static uint32_t s_last_history_wframe;
 #endif
 
 #if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
@@ -222,6 +224,20 @@ static void Demo_PollUart(void)
             uart_puts(" outMax="); uart_putf(vs.out_max,1);
             uart_puts("\r\n");
 #if (DEMO_SELECT == 8)
+        } else if (ch == 'H' || ch == 'h') {
+            uint8_t local_accepted;
+            uint8_t car_requested;
+            if (s_task_running != 0U || MechBalance_IsVisionActive() != 0U) {
+                uart_puts("ERR stop task before history dump\r\n");
+            } else {
+                local_accepted = HistoryLogger_RequestDump();
+                car_requested = TaskCtrl_RequestHistoryDump();
+                if (local_accepted != 0U || car_requested != 0U) {
+                    uart_puts("History dump requested; keep power on\r\n");
+                } else {
+                    uart_puts("ERR no frozen history\r\n");
+                }
+            }
         } else if (ch == 'V' || ch == 'v') {
             MechBalance_StartVision();
             uart_puts("Vision PID started\r\n");
@@ -331,6 +347,11 @@ void Demo_Init(void)
 {
     ProtoRx_Init();
     TaskCtrl_Init();
+#if (DEMO_SELECT == 8)
+    HistoryLogger_Init();
+    s_task_running = 0U;
+    s_last_history_wframe = 0U;
+#endif
     s_ms = 0U;
     s_last_action = 0U;
     s_last_output = 0U;
@@ -373,6 +394,7 @@ void Demo_Init(void)
     uart_puts("- V3 State Machine + Accel FF (Tasks 4 & 5)\r\n");
     uart_puts("  V start  W stop  N<val> target  A<val> accel m/s2  F<0|1> ff merge\r\n");
     uart_puts("  J/M/I KP/KD/KI  O<val> outMin  U<val> outMax  S status  P params  X stop\r\n");
+    uart_puts("  H dump last stopped-run RAM history (keep power on)\r\n");
 #else
     uart_puts("- Ball control mode (UART2 vision + PID)\r\n");
 #endif
@@ -408,8 +430,18 @@ void Demo_Tick5ms(void)
         }
         if (task_run && !s_task_running) {
             MechBalance_StartVision();      /* 赛题start: 上升沿启动 */
+            HistoryLogger_Start(ti.task_id);
+            {
+                WheelTelemetry_t telemetry;
+                if (TaskCtrl_GetWheelTelemetry(&telemetry) != 0U) {
+                    s_last_history_wframe = telemetry.frame;
+                } else {
+                    s_last_history_wframe = 0U;
+                }
+            }
         } else if (!task_run && s_task_running) {
             MechBalance_StopVision();       /* 赛题stop: 下降沿停止 */
+            HistoryLogger_Stop();
         }
         s_task_running = task_run;
         /* 触摸目标: 只更新目标位置, 不改变PID模式 */
@@ -427,6 +459,15 @@ void Demo_Tick5ms(void)
             }
         }
         MechBalance_Tick5ms();
+        /* 仅在新的20 Hz车轮帧到达时写一次RAM，不打印不写Flash。 */
+        {
+            WheelTelemetry_t telemetry;
+            if (TaskCtrl_GetWheelTelemetry(&telemetry) != 0U &&
+                telemetry.frame != s_last_history_wframe) {
+                s_last_history_wframe = telemetry.frame;
+                HistoryLogger_Capture(&telemetry);
+            }
+        }
         /* 上报球位置 -> 0x41状态帧 */
         {
             VisionStatus_t vs;
@@ -454,8 +495,10 @@ void Demo_Process(void)
 #endif
 
 #if (DEMO_SELECT == 8)
+    HistoryLogger_Process();
     /* 自动状态输出: 固定间隔打印S状态, 便于观察ax/ff变化趋势 */
-    if ((s_ms - s_last_auto_s) >= DEMO8_AUTO_S_MS) {
+    if (HistoryLogger_IsDumping() == 0U &&
+        (s_ms - s_last_auto_s) >= DEMO8_AUTO_S_MS) {
         s_last_auto_s = s_ms;
         Demo8_PrintStatus();
     }
