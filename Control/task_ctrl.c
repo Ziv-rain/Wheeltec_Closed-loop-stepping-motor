@@ -104,6 +104,8 @@ static volatile float s_wheel_speed_mps;
 static volatile float s_wheel_accel_mps2;
 static volatile uint8_t s_wheel_accel_valid;
 static volatile uint32_t s_wheel_accel_frame;
+static volatile uint32_t s_wheel_accel_tick;
+static volatile uint32_t s_wheel_accel_rx_frame;
 static volatile uint32_t s_wheel_rx_frame;
 static volatile uint32_t s_wheel_age_ms;
 
@@ -469,6 +471,8 @@ static void handle_wheel_frame(const uint8_t *data)
                 s_wheel_accel_mps2 = acceleration;
                 s_wheel_accel_valid = 1U;
                 s_wheel_accel_frame++;
+                s_wheel_accel_tick = s_wheel_tick;
+                s_wheel_accel_rx_frame = s_wheel_rx_frame;
             }
         }
     }
@@ -703,6 +707,8 @@ void TaskCtrl_Init(void)
     s_wheel_accel_mps2 = 0.0f;
     s_wheel_accel_valid = 0U;
     s_wheel_accel_frame = 0U;
+    s_wheel_accel_tick = 0U;
+    s_wheel_accel_rx_frame = 0U;
     s_wheel_rx_frame = 0U;
     s_wheel_age_ms = 0xFFFFFFFFU;
     car_log_reset_stream();
@@ -843,6 +849,25 @@ uint8_t TaskCtrl_GetWheelAccel(float *accel_mps2)
     if (s_wheel_age_ms > 500U) return 0U;
     *accel_mps2 = s_wheel_accel_mps2;
     return 1U;
+}
+
+uint8_t TaskCtrl_GetWheelAccelSample(WheelAccelSample_t *sample)
+{
+    uint32_t primask;
+    uint8_t valid;
+
+    if (sample == 0) return 0U;
+    primask = __get_PRIMASK();
+    __disable_irq();
+    valid = (s_wheel_accel_valid != 0U && s_wheel_age_ms <= 500U) ? 1U : 0U;
+    if (valid != 0U) {
+        sample->accel_mps2 = s_wheel_accel_mps2;
+        sample->source_tick_ms = s_wheel_accel_tick;
+        sample->frame = s_wheel_accel_frame;
+        sample->telemetry_frame = s_wheel_accel_rx_frame;
+    }
+    if (!primask) __enable_irq();
+    return valid;
 }
 
 uint8_t TaskCtrl_GetWheelTelemetry(WheelTelemetry_t *telemetry)

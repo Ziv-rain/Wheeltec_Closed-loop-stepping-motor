@@ -49,8 +49,13 @@ typedef struct {
     uint16_t left_counts, right_counts;
     uint32_t source_tick_ms, frame;
 } WheelTelemetry_t;
+typedef struct {
+    float accel_mps2;
+    uint32_t source_tick_ms, frame, telemetry_frame;
+} WheelAccelSample_t;
 
 #define TASK_4 4U
+#define TASK_5 5U
 #define TASK_6 6U
 #define STATE_RUNNING 1U
 
@@ -87,6 +92,7 @@ void TaskCtrl_ReportFault(void);
 uint8_t TaskCtrl_GetInfo(TaskInfo_t *info);
 uint8_t TaskCtrl_GetWheelAccel(float *accel_mps2);
 uint32_t TaskCtrl_GetWheelFrame(void);
+uint8_t TaskCtrl_GetWheelAccelSample(WheelAccelSample_t *sample);
 uint8_t TaskCtrl_GetWheelTelemetry(WheelTelemetry_t *telemetry);
 uint8_t TaskCtrl_RequestHistoryDump(void);
 void BallControl_Init(void);

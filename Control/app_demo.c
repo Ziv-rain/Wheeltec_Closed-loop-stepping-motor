@@ -18,6 +18,9 @@
 #include "task_ctrl.h"
 #include "mech_balance.h"
 #include "history_logger.h"
+#if (DEMO_SELECT == 8)
+#include "accel_history_profile.h"
+#endif
 
 static volatile uint32_t s_ms;
 #if (DEMO_SELECT == 4) || (DEMO_SELECT == 7) || (DEMO_SELECT == 8)
@@ -34,6 +37,12 @@ static uint8_t s_demo2_state;
 static uint32_t s_last_auto_s;
 static uint8_t s_task_running;  /* 赛题RUNNING状态锁存(边沿启停PID) */
 static uint32_t s_last_history_wframe;
+static uint32_t s_last_accel_wframe;
+static uint32_t s_accel_history_start_tick_ms;
+static uint8_t s_accel_history_phase_valid;
+static uint8_t s_accel_history_task_id;
+static uint8_t s_accel_history_last_used;
+static float s_accel_history_preview_mps2;
 #endif
 
 #if (DEMO_SELECT == 3) || (DEMO_SELECT == 4)
@@ -141,6 +150,87 @@ static void Demo2_SetMotion(uint8_t motion)
 #endif
 
 #if (DEMO_SELECT == 7) || (DEMO_SELECT == 8)
+#if (DEMO_SELECT == 8)
+static void Demo8_ArmAccelHistory(uint8_t task_id)
+{
+    s_accel_history_task_id = task_id;
+    s_accel_history_start_tick_ms = 0U;
+    s_accel_history_phase_valid = 0U;
+    s_accel_history_last_used = 0U;
+    s_accel_history_preview_mps2 = 0.0f;
+}
+
+static void Demo8_DisarmAccelHistory(void)
+{
+    Demo8_ArmAccelHistory(0U);
+}
+
+static void Demo8_SyncAccelHistoryPhase(uint8_t task_running,
+                                        uint8_t task_id,
+                                        uint32_t source_tick_ms)
+{
+    if (task_running != 0U && task_id == TASK_5 &&
+        (s_accel_history_phase_valid == 0U ||
+         s_accel_history_task_id != task_id)) {
+        s_accel_history_task_id = task_id;
+        s_accel_history_start_tick_ms = source_tick_ms;
+        s_accel_history_phase_valid = 1U;
+    }
+}
+
+/*
+ * Keep the existing live encoder acceleration as the primary input.  Only a
+ * Task-5 RUNNING sample with a valid learned phase receives the 30% preview.
+ * All other paths call MechBalance_SetAccel() with the original live value.
+ */
+static void Demo8_FeedWheelAccel(uint8_t task_running, uint8_t task_id)
+{
+    WheelAccelSample_t sample;
+    float accel_to_feed;
+
+    if (TaskCtrl_GetWheelAccelSample(&sample) == 0U) return;
+    if (sample.frame == s_last_accel_wframe) return;
+    s_last_accel_wframe = sample.frame;
+
+    accel_to_feed = sample.accel_mps2;
+    s_accel_history_last_used = 0U;
+    s_accel_history_preview_mps2 = 0.0f;
+
+#if ACCEL_HISTORY_HISTORY_PERCENT > 0U
+    if (task_running != 0U && task_id == TASK_5) {
+        uint32_t elapsed_ms;
+        float preview_accel;
+
+        /*
+         * At the RUNNING edge the current telemetry frame is deliberately
+         * excluded from the recorder. Feed that one live-only as well, so
+         * the learned phase starts on the same first recorded new frame.
+         */
+        if (s_accel_history_phase_valid != 0U ||
+            sample.telemetry_frame != s_last_history_wframe) {
+            Demo8_SyncAccelHistoryPhase(task_running, task_id,
+                                        sample.source_tick_ms);
+            /* Unsigned subtraction remains correct across uint32_t wrap. */
+            elapsed_ms = sample.source_tick_ms -
+                         s_accel_history_start_tick_ms;
+            if (AccelHistory_GetTask5Future50(elapsed_ms,
+                                              &preview_accel) != 0U) {
+                accel_to_feed = AccelHistory_Blend(sample.accel_mps2,
+                                                   preview_accel);
+                s_accel_history_preview_mps2 = preview_accel;
+                s_accel_history_last_used = 1U;
+            }
+        }
+    }
+#else
+    (void)task_running;
+    (void)task_id;
+#endif
+
+    MechBalance_SetAccel(accel_to_feed);
+}
+#endif
+
 /* 打印状态行 (S命令 + DEMO8自动输出共用) */
 static void Demo8_PrintStatus(void)
 {
@@ -167,6 +257,8 @@ static void Demo8_PrintStatus(void)
         uart_puts(" ff="); uart_putf(vs.ff_angle_deg, 2);
         uart_puts(" ax="); uart_putf(vs.accel_mps2, 2);
         uart_puts(" merged="); uart_putu(vs.ff_merged);
+        uart_puts(" hp="); uart_putf(s_accel_history_preview_mps2, 2);
+        uart_puts(" hused="); uart_putu(s_accel_history_last_used);
     }
 #endif
     uart_puts("\r\n");
@@ -351,6 +443,8 @@ void Demo_Init(void)
     HistoryLogger_Init();
     s_task_running = 0U;
     s_last_history_wframe = 0U;
+    s_last_accel_wframe = 0U;
+    Demo8_DisarmAccelHistory();
 #endif
     s_ms = 0U;
     s_last_action = 0U;
@@ -419,7 +513,7 @@ void Demo_Tick5ms(void)
     TaskCtrl_Tick5ms();                          /* AA55命令处理 + 状态机 */
     BallControl_Tick5ms();
     if (BallControl_IsHomingReady()) {
-        TaskInfo_t ti;
+        TaskInfo_t ti = {0};
         float touch_cm;
         uint8_t task_run = 0;
         /* 赛题T4/T5/T6: 仅RUNNING边沿启动PID, 下降沿(STOP)停止 */
@@ -431,6 +525,7 @@ void Demo_Tick5ms(void)
         if (task_run && !s_task_running) {
             MechBalance_StartVision();      /* 赛题start: 上升沿启动 */
             HistoryLogger_Start(ti.task_id);
+            Demo8_ArmAccelHistory(ti.task_id);
             {
                 WheelTelemetry_t telemetry;
                 if (TaskCtrl_GetWheelTelemetry(&telemetry) != 0U) {
@@ -439,25 +534,22 @@ void Demo_Tick5ms(void)
                     s_last_history_wframe = 0U;
                 }
             }
+        } else if (task_run && s_task_running &&
+                   s_accel_history_task_id != ti.task_id) {
+            /* Defensive re-phase if a controller changes tasks without STOP. */
+            Demo8_ArmAccelHistory(ti.task_id);
         } else if (!task_run && s_task_running) {
             MechBalance_StopVision();       /* 赛题stop: 下降沿停止 */
             HistoryLogger_Stop();
+            Demo8_DisarmAccelHistory();
         }
         s_task_running = task_run;
         /* 触摸目标: 只更新目标位置, 不改变PID模式 */
         if (ProtoRx_GetTouchTarget(&touch_cm)) {
             MechBalance_SetVisionTargetOnly(touch_cm);
         }
-        /* 车轮编码器加速度 -> 力学前馈补偿 (仅新帧才喂EMA, 避免5ms重复放大) */
-        {
-            static uint32_t s_last_wframe;
-            uint32_t wf = TaskCtrl_GetWheelFrame();
-            if (wf != s_last_wframe) {
-                s_last_wframe = wf;
-                float ax;
-                if (TaskCtrl_GetWheelAccel(&ax)) MechBalance_SetAccel(ax);
-            }
-        }
+        /* 新20 Hz帧: 实时加速度为主，Task 5叠加30%的50 ms历史预见。 */
+        Demo8_FeedWheelAccel(task_run, ti.task_id);
         MechBalance_Tick5ms();
         /* 仅在新的20 Hz车轮帧到达时写一次RAM，不打印不写Flash。 */
         {
@@ -465,6 +557,9 @@ void Demo_Tick5ms(void)
             if (TaskCtrl_GetWheelTelemetry(&telemetry) != 0U &&
                 telemetry.frame != s_last_history_wframe) {
                 s_last_history_wframe = telemetry.frame;
+                /* Anchor phase to the same first packet used by the profile. */
+                Demo8_SyncAccelHistoryPhase(task_run, ti.task_id,
+                                            telemetry.source_tick_ms);
                 HistoryLogger_Capture(&telemetry);
             }
         }
