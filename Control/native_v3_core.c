@@ -396,7 +396,7 @@ void NativeV3_SetGains(NativeV3_Controller_t *controller, float kp,
 {
     if (controller == NULL) return;
     if (finitef(kp) && kp >= 0.20f && kp <= 8.0f) controller->cfg.kp = kp;
-    if (finitef(kd) && kd >= 0.0f && kd <= 1.0f) controller->cfg.kd = kd;
+    if (finitef(kd) && kd >= 0.0f) controller->cfg.kd = kd;  /* 无上限 */
     if (finitef(ki) && ki >= 0.0f && ki <= 0.08f) controller->cfg.ki = ki;
     controller->integral = 0.0f;
 }
