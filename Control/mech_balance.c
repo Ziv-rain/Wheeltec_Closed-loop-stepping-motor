@@ -26,8 +26,8 @@
 
 static MechParams_t s_params = {
     .gravity = 9.80665f,
-    .accel_gain_fwd = 1.0f,   /* 日志证实: G大放大ax噪声推球正端, 回1.0 */
-    .accel_gain_brake = 0.3f, /* 匀速负脉冲走B通道推球负端, 先压住 */
+    .accel_gain_fwd = 9.0f,   /* 用户实机标定 */
+    .accel_gain_brake = 2.0f, /* 用户实机标定 */
     .accel_bias = 0.0f,
     .theta_trim_deg = 0.0f,
     .theta_rate_limit = 80.0f,
