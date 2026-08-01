@@ -48,7 +48,7 @@
 #define PWM_LIMIT_MARGIN            2.0f     /* 限位保护预留余量 (°) */
 
 /* 上电自动零点标定 (赛前调水平后读 PWM 填入, 比赛现场无需电脑) */
-#define PWM_HORIZONTAL_REF          135.21f  /* 实测: 摆杆水平时 PWM = 135.21度 (上车后) */
+#define PWM_HORIZONTAL_REF          136.26f  /* 实测: 摆杆水平时 PWM = 136.26度 */
 #define PWM_HORIZONTAL_TOL          1.0f     /* 判断水平的容差 (°) */
 #define HOMING_FREQ_HZ              100U
 #define HOMING_WAIT_TIMEOUT_MS      3000U    /* 等待绝对角度信号的最长时间 */

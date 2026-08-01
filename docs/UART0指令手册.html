@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UART0 指令手册 - 天猛星2 顶层控制</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d2991d;
+    --purple: #a371f7; --orange: #d18616;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6; padding: 20px; max-width: 1100px; margin: auto;
+  }
+  h1 { font-size: 2em; border-bottom: 2px solid var(--accent); padding-bottom: 12px; margin: 24px 0 16px; }
+  h2 { font-size: 1.5em; margin: 32px 0 12px; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  h3 { font-size: 1.2em; margin: 20px 0 8px; color: var(--purple); }
+  p, li { margin: 4px 0; }
+  ul, ol { padding-left: 24px; }
+  code { background: #1c2129; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; color: var(--orange); }
+  pre { background: #1c2129; padding: 14px 18px; border-radius: 8px; overflow-x: auto; font-size: 0.85em; line-height: 1.5; border: 1px solid var(--border); margin: 10px 0; }
+  pre code { background: none; padding: 0; color: var(--text); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+  th { background: #1c2129; font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin: 14px 0; }
+  .note { background: #1a2332; border-left: 4px solid var(--accent); padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .warn { background: #2d1f1a; border-left: 4px solid var(--red); padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .tip  { background: #1e2d1a; border-left: 4px solid var(--green); padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .toc { background: var(--card); border-radius: 10px; padding: 16px 20px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ul { list-style: none; padding-left: 0; }
+  .toc li { padding: 3px 0; }
+</style>
+</head>
+<body>
+
+<h1>🖥️ UART0 指令手册<br><small style="color:var(--muted)">天猛星2 顶层控制 · motor-3 / feat/task3</small></h1>
+
+<div class="toc">
+  <h3 style="margin-top:0">📑 目录</h3>
+  <ul>
+    <li><a href="#basics">1. 基础说明</a></li>
+    <li><a href="#task">2. 赛题控制</a></li>
+    <li><a href="#pid">3. 球控制 PID 参数</a></li>
+    <li><a href="#ff">4. 前馈参数</a></li>
+    <li><a href="#t3">5. 第 3 题参数</a></li>
+    <li><a href="#misc">6. 其他命令</a></li>
+    <li><a href="#workflow">7. 典型调试流程</a></li>
+    <li><a href="#status">8. S 输出解读</a></li>
+  </ul>
+</div>
+
+<!-- ============ 1. 基础 ============ -->
+<h2 id="basics">1. 基础说明</h2>
+
+<div class="card">
+  <table>
+    <tr><th>项目</th><th>值</th></tr>
+    <tr><td>串口</td><td>UART0</td></tr>
+    <tr><td>引脚</td><td>PA28(TX) / PA31(RX)</td></tr>
+    <tr><td>波特率</td><td><strong>115200-8-N-1</strong></td></tr>
+    <tr><td>发送格式</td><td>ASCII 文本 + 回车(\r\n)</td></tr>
+    <tr><td>自动输出</td><td>每 500ms 打印一行 S 状态</td></tr>
+  </table>
+  <div class="warn"><strong>⚠️ 重要:</strong> UART0 是调试口(115200)。UART1 才是主控口(9600, AA55 帧)。别搞混!</div>
+  <div class="note">命令格式: <code>字母 + 空格 + 数值 + 回车</code>。例如 <code>J 2.5</code> 回车。<br>
+  超范围的参数被<strong>静默拒绝</strong>(无提示),用 <code>P</code> 确认实际值。</div>
+</div>
+
+<!-- ============ 2. 赛题 ============ -->
+<h2 id="task">2. 赛题控制</h2>
+
+<div class="card">
+  <table>
+    <tr><th>命令</th><th>功能</th><th>等同 UART1</th></tr>
+    <tr><td><code># &lt;N&gt;</code></td><td>选择赛题 N (2~6)</td><td>0x40 01 N</td></tr>
+    <tr><td><code>V</code></td><td>开始(有选中赛题→自动回零+PID启动)</td><td>0x40 02</td></tr>
+    <tr><td><code>W</code></td><td>停止(停状态机+PID)</td><td>0x40 03</td></tr>
+    <tr><td><code>!</code></td><td>停止赛题</td><td>0x40 03</td></tr>
+    <tr><td><code>@</code></td><td>启动第 3 题(一键)</td><td>0x40 02 (T3)</td></tr>
+  </table>
+
+  <h3>赛题流程</h3>
+  <pre><code># 5    ← 选T5 (OK Task=5)
+V      ← 开始 (电机先回水平零点 → PID启动 → 球控制)
+W      ← 停止
+
+# 6    ← 选T6 (OK Task=6)
+V      ← 开始
+(球稳定±1cm达500ms → 自动DONE)</code></pre>
+
+  <div class="tip">V 的智能行为: 选了赛题走完整状态机(自动回零);没选赛题直接启动 PID(纯调试)。</div>
+</div>
+
+<!-- ============ 3. PID ============ -->
+<h2 id="pid">3. 球控制 PID 参数</h2>
+
+<div class="card">
+  <table>
+    <tr><th>命令</th><th>参数</th><th>范围</th><th>默认</th><th>说明</th></tr>
+    <tr><td><code>J &lt;值&gt;</code></td><td>KP</td><td>0.2 ~ 8.0</td><td>2.35</td><td>位置增益, 响应快慢主旋钮</td></tr>
+    <tr><td><code>M &lt;值&gt;</code></td><td>KD</td><td>≥0 无上限</td><td>0.50</td><td>速度阻尼</td></tr>
+    <tr><td><code>I &lt;值&gt;</code></td><td>KI</td><td>0 ~ 0.08</td><td>0.02</td><td>积分(条件启用)</td></tr>
+    <tr><td><code>O &lt;值&gt;</code></td><td>输出下限</td><td>-10 ~ -1</td><td>-6</td><td>PID 输出范围</td></tr>
+    <tr><td><code>U &lt;值&gt;</code></td><td>输出上限</td><td>1 ~ 10</td><td>6</td><td>PID 输出范围</td></tr>
+    <tr><td><code>T &lt;值&gt;</code></td><td>trim</td><td>±4°</td><td>0</td><td>静态零偏补偿(水管不平)</td></tr>
+    <tr><td><code>N &lt;值&gt;</code></td><td>目标位置</td><td>±9cm</td><td>0</td><td>setpoint</td></tr>
+  </table>
+
+  <h3>调参口诀</h3>
+  <pre><code>响应慢   → J 加大
+振荡     → M 加大 (或 J 减小)
+球偏一边 → T 补偿 (偏正侧→T负, 偏负侧→T正)
+静差     → I 0.04 试</code></pre>
+</div>
+
+<!-- ============ 4. 前馈 ============ -->
+<h2 id="ff">4. 前馈参数</h2>
+
+<div class="card">
+  <table>
+    <tr><th>命令</th><th>参数</th><th>范围</th><th>默认</th><th>说明</th></tr>
+    <tr><td><code>G &lt;值&gt;</code></td><td>前进增益</td><td>≥0 无上限</td><td>9.2</td><td>加速度→倾角斜率(正加速)</td></tr>
+    <tr><td><code>B &lt;值&gt;</code></td><td>刹车增益</td><td>≥0 无上限</td><td>2.0</td><td>加速度→倾角斜率(负加速)</td></tr>
+    <tr><td><code>E &lt;值&gt;</code></td><td>前馈限幅</td><td>4 ~ 30°</td><td>8</td><td>前馈角度上限</td></tr>
+    <tr><td><code>F &lt;0/1&gt;</code></td><td>融合开关</td><td>0/1</td><td>1</td><td>前馈是否叠加到PID</td></tr>
+    <tr><td><code>A &lt;值&gt;</code></td><td>手动加速度</td><td>±3</td><td>0</td><td>模拟加速度(测试前馈)</td></tr>
+  </table>
+
+  <h3>前馈测试流程(不用启动车)</h3>
+  <pre><code>F 1     ← 开融合
+V       ← 启动
+A 1     ← 模拟加速 1 m/s²
+S       ← 看 ff 应为负(推球向前抵消惯性)
+A 0     ← 复位</code></pre>
+
+  <div class="note">G/B/E 调参逻辑: ff 未打满调 G/B(斜率);ff 打满调 E(上限)。S 的 ff 字段判断。</div>
+</div>
+
+<!-- ============ 5. 第3题 ============ -->
+<h2 id="t3">5. 第 3 题参数</h2>
+
+<div class="card">
+  <table>
+    <tr><th>命令</th><th>功能</th><th>默认</th></tr>
+    <tr><td><code>H &lt;值&gt;</code></td><td>设 tgt1 (初始目标 cm)</td><td>4.0</td></tr>
+    <tr><td><code>K &lt;值&gt;</code></td><td>设 tgt2 (终值 cm)</td><td>-5.0</td></tr>
+    <tr><td><code>Y &lt;值&gt;</code></td><td>设 mid (摆荡中间目标 cm)</td><td>1.5</td></tr>
+    <tr><td><code>Q &lt;值&gt;</code></td><td>设 ramp 时长 (ms)</td><td>750</td></tr>
+    <tr><td><code>C &lt;值&gt;</code></td><td>设 tol (到位容差 cm)</td><td>0.8</td></tr>
+    <tr><td><code>@</code></td><td>一键启动 T3</td><td>-</td></tr>
+  </table>
+
+  <h3>T3 轨迹</h3>
+  <pre><code>tgt1(4.0) → 球过4.5cm → mid(1.5) → ramp → tgt2(-5.0)
+→ 球过-4.5cm → 刹车(2.5°) → 500ms → DONE</code></pre>
+</div>
+
+<!-- ============ 6. 其他 ============ -->
+<h2 id="misc">6. 其他命令</h2>
+
+<div class="card">
+  <table>
+    <tr><th>命令</th><th>功能</th></tr>
+    <tr><td><code>S</code></td><td>查看状态(每500ms也自动输出)</td></tr>
+    <tr><td><code>P</code></td><td>查看参数列表</td></tr>
+    <tr><td><code>D &lt;角度&gt;</code></td><td>直接设电机角度(±30~45°)</td></tr>
+    <tr><td><code>L / R &lt;值&gt;</code></td><td>设角度变化率(10~80°/s)</td></tr>
+    <tr><td><code>Z</code></td><td>置零(提示归自动回零管)</td></tr>
+    <tr><td><code>X</code></td><td>紧急停止(锁死需重启)</td></tr>
+  </table>
+</div>
+
+<!-- ============ 7. 流程 ============ -->
+<h2 id="workflow">7. 典型调试流程</h2>
+
+<div class="card">
+  <h3>流程 1:调球控制</h3>
+  <pre><code>F 0     ← 关前馈
+V       ← 启动PID
+J 2.5   ← 调KP
+S       ← 看球是否回中
+M 0.6   ← 振荡就加阻尼</code></pre>
+
+  <h3>流程 2:调前馈(不启动车)</h3>
+  <pre><code>F 1     ← 开融合
+V       ← 启动
+A 1     ← 模拟加速
+S       ← 看ff方向/大小
+G 9.2   ← 调前进增益
+E 8     ← 调限幅
+A 0     ← 复位</code></pre>
+
+  <h3>流程 3:跑赛题</h3>
+  <pre><code># 5     ← 选T5
+V       ← 开始(自动回零+PID)
+S       ← 观察
+W       ← 停止</code></pre>
+</div>
+
+<!-- ============ 8. S解读 ============ -->
+<h2 id="status">8. S 输出解读</h2>
+
+<div class="card">
+  <pre><code>Tgt=4.41 Act=4.23 PWM=138.35 | VIS: act=1 valid=1 sp=0.00 ball=5.48 vel=0.00 out=4.38 KP=2.35 KD=0.50 omin=-6.0 omax=6.0 ff=0.00 ax=0.00 merged=1
+ │         │         │              │         │        │        │       │       │                     │       │         ↑
+ 目标角    实际角    PWM绝对角       是否启动   视觉有效  目标位置  球位置  球速度  PID输出              前馈角  加速度    融合开关</code></pre>
+  <table>
+    <tr><th>字段</th><th>含义</th><th>诊断</th></tr>
+    <tr><td><code>act</code></td><td>是否启动</td><td>0=待机 1=运行</td></tr>
+    <tr><td><code>valid</code></td><td>视觉有效</td><td>0=丢失</td></tr>
+    <tr><td><code>ball</code></td><td>球位置 cm</td><td>应接近 sp</td></tr>
+    <tr><td><code>vel</code></td><td>球速度 cm/s</td><td>稳定≈0</td></tr>
+    <tr><td><code>out</code></td><td>PID输出 °</td><td>卡住=out不够</td></tr>
+    <tr><td><code>ff</code></td><td>前馈角 °</td><td>ax≠0时跟随; 恒0=数据没来</td></tr>
+    <tr><td><code>ax</code></td><td>加速度 m/s²</td><td>车不动应0</td></tr>
+    <tr><td><code>merged</code></td><td>融合激活</td><td>1=前馈+PID</td></tr>
+  </table>
+</div>
+
+<hr style="border-color:var(--border);margin:32px 0">
+<p style="color:var(--muted);text-align:center;font-size:0.85em">
+  天猛星2 UART0 指令手册 · motor-3 · feat/task3 · 2026-08-01
+</p>
+
+</body>
+</html>
